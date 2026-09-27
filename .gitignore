@@ -1,1 +1,19 @@
+# Exported plots
 GenerativeLineArt/exports/*.svg
+
+# Personal quick-saved presets (P key); curated examples are committed by name
+GenerativeLineArt/presets/preset_*.json
+
+# Processing "Export Application" / CLI build output
+GenerativeLineArt/application.*/
+GenerativeLineArt/linux-*/
+GenerativeLineArt/macos-*/
+GenerativeLineArt/windows-*/
+build/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
