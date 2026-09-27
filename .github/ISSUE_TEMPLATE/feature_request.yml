@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest a new pattern, control or export option
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature. For new patterns, a reference image or link helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful?
+      description: What would it let you plot or do that you can't today?

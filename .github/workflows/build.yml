@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: [main, Dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROCESSING_TAG: processing-1435-4.5.7
+  PROCESSING_ASSET: processing-4.5.7-linux-x64-portable.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Processing
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/processing
+          key: ${{ env.PROCESSING_TAG }}
+
+      - name: Download Processing
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/processing.zip \
+            "https://github.com/processing/processing4/releases/download/${PROCESSING_TAG}/${PROCESSING_ASSET}"
+          mkdir -p ~/processing
+          unzip -q /tmp/processing.zip -d ~/processing
+
+      - name: Build sketch
+        run: |
+          ~/processing/Processing/bin/Processing cli \
+            --sketch="$GITHUB_WORKSPACE/GenerativeLineArt" \
+            --output="$RUNNER_TEMP/build" \
+            --force --build
+
+      - name: Validate example presets
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          ok = True
+          for f in sorted(pathlib.Path("GenerativeLineArt/presets").glob("*.json")):
+              try:
+                  d = json.loads(f.read_text())
+                  assert isinstance(d.get("layers"), list) and d["layers"], "missing 'layers'"
+                  for i, layer in enumerate(d["layers"]):
+                      assert "pattern" in layer, f"layer {i} has no 'pattern'"
+                  print(f"ok   {f}")
+              except Exception as e:
+                  ok = False
+                  print(f"FAIL {f}: {e}")
+          sys.exit(0 if ok else 1)
+          PY
