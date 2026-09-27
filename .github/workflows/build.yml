@@ -18,11 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache Processing
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/processing
           key: ${{ env.PROCESSING_TAG }}
@@ -30,7 +30,7 @@ jobs:
       - name: Download Processing
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL -o /tmp/processing.zip \
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/processing.zip \
             "https://github.com/processing/processing4/releases/download/${PROCESSING_TAG}/${PROCESSING_ASSET}"
           mkdir -p ~/processing
           unzip -q /tmp/processing.zip -d ~/processing
