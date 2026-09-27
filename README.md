@@ -2,6 +2,8 @@
 
 Generative line art with a live-adjustable GUI, built as a single [Processing](https://processing.org/) sketch. Designed for pen plotters: everything exports as clean, millimetre-accurate SVG.
 
+![PlotterGraph GUI with a spirograph and superformula on two pen layers](docs/screenshot.png)
+
 ## Features
 
 - **17 patterns** — flow field, wave lines, spirograph, noise rings, Lissajous, contour map, Truchet tiles, hatch shading, strange attractor, superformula, nested polygons, spiral, moire circles, circle packing, harmonograph, Hilbert curve, sunburst.
