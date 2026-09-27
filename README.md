@@ -1,6 +1,6 @@
 # PlotterGraph
 
-Generative line art with a live-adjustable GUI, built as a single [Processing](https://processing.org/) 4 sketch. Designed for pen plotters: everything exports as clean, millimetre-accurate SVG.
+Generative line art with a live-adjustable GUI, built as a single [Processing](https://processing.org/) sketch. Designed for pen plotters: everything exports as clean, millimetre-accurate SVG.
 
 ## Features
 
