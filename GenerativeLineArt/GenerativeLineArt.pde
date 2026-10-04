@@ -2,7 +2,7 @@
 // ------------------------------------------------------------------
 // Processing 4 (Java mode). No extra libraries needed.
 //
-// * 17 patterns, up to 4 independent pen layers (each: pattern, seed,
+// * 26 patterns, up to 4 independent pen layers (each: pattern, seed,
 //   pen colour, pen width, scale / rotate / offset)
 // * live preview while you drag the sliders
 // * SVG export in millimetres, one Inkscape layer per pen (or one file
@@ -27,13 +27,15 @@ final String[] PATTERN_NAMES = {
   "Flow field", "Wave lines", "Spirograph", "Noise rings", "Lissajous",
   "Contour map", "Truchet tiles", "Hatch shading", "Strange attractor", "Superformula",
   "Nested polygons", "Spiral", "Moire circles", "Circle packing", "Harmonograph",
-  "Hilbert curve", "Sunburst"
+  "Hilbert curve", "Sunburst", "Maze", "L-system", "Guilloche", "Maurer rose",
+  "Phyllotaxis", "Subdivision", "Warped grid", "Fractal tree", "Voronoi"
 };
 final String[] PAPER_NAMES = { "A5", "A4", "A3", "Square" };
 final float[][] PAPER_MM   = { {148, 210}, {210, 297}, {297, 420}, {250, 250} };
 final String[] PEN_NAMES   = { "Black", "Red", "Blue", "Green", "Orange", "Purple", "Teal", "Brown" };
 final int[] PEN_COLORS     = { 0xFF111111, 0xFFD62828, 0xFF1D4ED8, 0xFF15803D, 0xFFEA7A00, 0xFF7E22CE, 0xFF0E9AA7, 0xFF7C4A21 };
 final int NUM_LAYERS = 4;
+final String[] LSYS_NAMES  = { "Snowflake", "Dragon", "Gosper", "Sierpinski", "Plant" };
 
 final int C_PANEL  = 0xFF1E1F22;
 final int C_CANVAS = 0xFF2B2D31;
@@ -323,6 +325,83 @@ ArrayList<Param> makeParams(Layer L, int mode) {
       l.add(P(L, "Noise scale",     0.2,   8,   2, false));
       l.add(P(L, "Twist",          -180, 180,  40, false));
       l.add(P(L, "Inner var",         0,   1,   0, false));
+      break;
+    case 17: // Maze
+      l.add(P(L, "Cells",             4, 100,  24, true));
+      l.add(new Param(L, "Style", new String[] { "Walls", "Path" }, 0));
+      l.add(P(L, "Straightness",      0,   1, 0.3, false));
+      l.add(P(L, "Loops",             0,   1,   0, false));
+      l.add(new Param(L, "Entrance/exit", true));
+      break;
+    case 18: // L-system
+      l.add(new Param(L, "Type", LSYS_NAMES, 0));
+      l.add(P(L, "Iterations",        1,  16,   4, true));
+      l.add(P(L, "Angle tweak",     -15,  15,   0, false));
+      l.add(P(L, "Jitter",            0, 0.5,   0, false));
+      l.add(P(L, "Smooth",            0,   3,   0, true));
+      break;
+    case 19: // Guilloche
+      l.add(P(L, "Lines",             1,  60,  10, true));
+      l.add(P(L, "Oscillations",      3, 100,  28, true));
+      l.add(P(L, "Outer radius",    0.2,   1, 0.95, false));
+      l.add(P(L, "Inner radius",      0, 0.95, 0.35, false));
+      l.add(P(L, "Outer lobes",       0,  24,  12, true));
+      l.add(P(L, "Inner lobes",       0,  24,   6, true));
+      l.add(P(L, "Lobe depth",        0, 0.5, 0.12, false));
+      l.add(P(L, "Resolution",      300, 6000, 2000, true));
+      break;
+    case 20: // Maurer rose
+      l.add(P(L, "Petals n",          1,  12,   6, true));
+      l.add(P(L, "Step d (deg)",      1, 359,  71, true));
+      l.add(P(L, "Points",           60, 3600, 361, true));
+      l.add(P(L, "Copies",            1,   8,   1, true));
+      l.add(P(L, "d / copy",          1,  30,   1, true));
+      l.add(new Param(L, "Draw rose", true));
+      break;
+    case 21: // Phyllotaxis
+      l.add(P(L, "Points",           50, 4000, 900, true));
+      l.add(P(L, "Angle tweak",      -3,   3,   0, false));
+      l.add(new Param(L, "Mark", new String[] { "Circles", "Dashes", "Spirals" }, 0));
+      l.add(P(L, "Dot size (mm)",   0.3,   8, 2.4, false));
+      l.add(P(L, "Size growth",       0,   1, 0.7, false));
+      l.add(P(L, "Rings / dashes",    1,   5,   1, true));
+      l.add(P(L, "Spiral family",     3,   9,   6, true));
+      break;
+    case 22: // Subdivision
+      l.add(P(L, "Depth",             1,  14,   8, true));
+      l.add(P(L, "Min size (mm)",     2,  60,   8, false));
+      l.add(P(L, "Split variance",    0, 0.45, 0.3, false));
+      l.add(P(L, "Stop chance",       0, 0.7, 0.2, false));
+      l.add(P(L, "Fill amount",       0,   1, 0.5, false));
+      l.add(P(L, "Hatch (mm)",      0.4,   6, 1.2, false));
+      l.add(P(L, "Gap (mm)",          0,   6, 1.5, false));
+      break;
+    case 23: // Warped grid
+      l.add(P(L, "Lines",             5, 250,  70, true));
+      l.add(new Param(L, "Direction", new String[] { "Horizontal", "Vertical", "Grid" }, 0));
+      l.add(P(L, "Bulges",            1,   8,   1, true));
+      l.add(P(L, "Strength",         -1, 1.5, 0.9, false));
+      l.add(P(L, "Radius",         0.05,   1, 0.35, false));
+      l.add(P(L, "Noise warp (mm)",   0,  20,   0, false));
+      l.add(P(L, "Resolution",       50, 1000, 400, true));
+      break;
+    case 24: // Fractal tree
+      l.add(P(L, "Depth",             2,  14,  10, true));
+      l.add(P(L, "Branches",          2,   4,   2, true));
+      l.add(P(L, "Branch angle",      5,  90,  25, false));
+      l.add(P(L, "Angle var",         0,   1, 0.35, false));
+      l.add(P(L, "Length ratio",    0.5, 0.9, 0.72, false));
+      l.add(P(L, "Length var",        0, 0.5, 0.2, false));
+      l.add(P(L, "Bend",            -40,  40,   0, false));
+      break;
+    case 25: // Voronoi
+      l.add(P(L, "Cells",             5, 800, 150, true));
+      l.add(P(L, "Relax",             0,  10,   2, true));
+      l.add(P(L, "Center bias",       0,   1,   0, false));
+      l.add(P(L, "Inset rings",       0,  12,   3, true));
+      l.add(P(L, "Ring gap (mm)",   0.4,   6, 1.2, false));
+      l.add(P(L, "Smooth",            0,   4,   2, true));
+      l.add(new Param(L, "Borders", true));
       break;
   }
   return l;
@@ -776,6 +855,15 @@ void generateLayer(Layer L) {
     case 14: genHarmonograph(out); break;
     case 15: genHilbert(out); break;
     case 16: genSunburst(out); break;
+    case 17: genMaze(out); break;
+    case 18: genLSystem(out); break;
+    case 19: genGuilloche(out); break;
+    case 20: genMaurer(out); break;
+    case 21: genPhyllotaxis(out); break;
+    case 22: genSubdivision(out); break;
+    case 23: genWarpedGrid(out); break;
+    case 24: genTree(out); break;
+    case 25: genVoronoi(out); break;
   }
 
   // per-layer transform about the centre of the drawing area
@@ -1425,18 +1513,7 @@ void genHilbert(ArrayList<ArrayList<PVector>> out) {
     float jx = jitter > 0 ? (random(1) - 0.5) * jitter * sx : 0, jy = jitter > 0 ? (random(1) - 0.5) * jitter * sy : 0;
     pts.add(new PVector(ox + (xy[0] + 0.5) * sx + jx, oy + (xy[1] + 0.5) * sy + jy));
   }
-  for (int it = 0; it < smooth && pts.size() < 150000; it++) {   // Chaikin corner cutting
-    ArrayList<PVector> np = new ArrayList<PVector>(pts.size() * 2);
-    np.add(pts.get(0));
-    for (int i = 0; i < pts.size() - 1; i++) {
-      PVector p0 = pts.get(i), p1 = pts.get(i + 1);
-      np.add(new PVector(lerp(p0.x, p1.x, 0.25), lerp(p0.y, p1.y, 0.25)));
-      np.add(new PVector(lerp(p0.x, p1.x, 0.75), lerp(p0.y, p1.y, 0.75)));
-    }
-    np.add(pts.get(pts.size() - 1));
-    pts = np;
-  }
-  emit(out, pts);
+  emit(out, chaikin(pts, smooth));
 }
 
 int[] hilbertD2XY(int n, int d) {
@@ -1476,6 +1553,619 @@ void genSunburst(ArrayList<ArrayList<PVector>> out) {
     }
     emit(out, pts);
   }
+}
+
+// ---------- helpers for the patterns below --------------------------------
+
+// Chaikin corner cutting on an open polyline (end points are kept).
+ArrayList<PVector> chaikin(ArrayList<PVector> pts, int iters) {
+  for (int it = 0; it < iters && pts.size() >= 3 && pts.size() < 150000; it++) {
+    ArrayList<PVector> np = new ArrayList<PVector>(pts.size() * 2);
+    np.add(pts.get(0));
+    for (int i = 0; i < pts.size() - 1; i++) {
+      PVector p0 = pts.get(i), p1 = pts.get(i + 1);
+      np.add(new PVector(lerp(p0.x, p1.x, 0.25), lerp(p0.y, p1.y, 0.25)));
+      np.add(new PVector(lerp(p0.x, p1.x, 0.75), lerp(p0.y, p1.y, 0.75)));
+    }
+    np.add(pts.get(pts.size() - 1));
+    pts = np;
+  }
+  return pts;
+}
+
+// Chaikin on a closed polygon given without the repeated first point.
+// Returns a closed polyline (first point repeated at the end).
+ArrayList<PVector> chaikinClosed(ArrayList<PVector> poly, int iters) {
+  for (int it = 0; it < iters && poly.size() < 50000; it++) {
+    int n = poly.size();
+    ArrayList<PVector> np = new ArrayList<PVector>(n * 2);
+    for (int i = 0; i < n; i++) {
+      PVector p0 = poly.get(i), p1 = poly.get((i + 1) % n);
+      np.add(new PVector(lerp(p0.x, p1.x, 0.25), lerp(p0.y, p1.y, 0.25)));
+      np.add(new PVector(lerp(p0.x, p1.x, 0.75), lerp(p0.y, p1.y, 0.75)));
+    }
+    poly = np;
+  }
+  ArrayList<PVector> closed = new ArrayList<PVector>(poly);
+  if (!poly.isEmpty()) closed.add(poly.get(0).copy());
+  return closed;
+}
+
+// Scale paths built in arbitrary units uniformly into the drawing area (centred).
+void fitPaths(ArrayList<ArrayList<PVector>> raw, ArrayList<ArrayList<PVector>> out) {
+  float x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (ArrayList<PVector> p : raw) for (PVector v : p) {
+    x0 = min(x0, v.x); x1 = max(x1, v.x); y0 = min(y0, v.y); y1 = max(y1, v.y);
+  }
+  if (x0 > x1) return;
+  float sc = min((xmax - xmin) / max(x1 - x0, 1e-6), (ymax - ymin) / max(y1 - y0, 1e-6));
+  float ox = (xmin + xmax) / 2 - (x0 + x1) / 2 * sc, oy = (ymin + ymax) / 2 - (y0 + y1) / 2 * sc;
+  for (ArrayList<PVector> p : raw) {
+    ArrayList<PVector> pts = new ArrayList<PVector>(p.size());
+    for (PVector v : p) pts.add(new PVector(ox + v.x * sc, oy + v.y * sc));
+    emit(out, pts);
+  }
+}
+
+// Joins loose segments {x0, y0, x1, y1} into as few polylines as possible:
+// end points closer than 0.02 mm are merged, duplicate segments are dropped
+// and at junctions the straightest continuation wins. Saves many pen lifts
+// on grid- and cell-like patterns.
+void chainSegments(ArrayList<float[]> segs, ArrayList<ArrayList<PVector>> out) {
+  final float eps = 0.02;
+  ArrayList<PVector> verts = new ArrayList<PVector>();
+  HashMap<Long, IntList> bins = new HashMap<Long, IntList>();
+  IntList ea = new IntList(), eb = new IntList();
+  HashSet<Long> seen = new HashSet<Long>();
+  ArrayList<IntList> adj = new ArrayList<IntList>();
+  for (float[] s : segs) {
+    int a = vertexId(verts, bins, adj, s[0], s[1], eps), b = vertexId(verts, bins, adj, s[2], s[3], eps);
+    if (a == b) continue;
+    long key = ((long) min(a, b) << 32) | max(a, b);
+    if (!seen.add(key)) continue;
+    adj.get(a).append(ea.size()); adj.get(b).append(ea.size());
+    ea.append(a); eb.append(b);
+  }
+  boolean[] used = new boolean[ea.size()];
+  for (int pass = 0; pass < 2; pass++) {             // start at loose ends first, then close loops
+    for (int v = 0; v < verts.size(); v++) {
+      if (pass == 0 && adj.get(v).size() % 2 == 0) continue;
+      while (true) {
+        ArrayList<PVector> pts = new ArrayList<PVector>();
+        pts.add(verts.get(v).copy());
+        int cur = v; float dx = 0, dy = 0;
+        while (true) {
+          int best = -1; float bs = -1e9;
+          PVector a = verts.get(cur);
+          IntList es = adj.get(cur);
+          for (int k = 0; k < es.size(); k++) {
+            int e = es.get(k);
+            if (used[e]) continue;
+            PVector b = verts.get(ea.get(e) == cur ? eb.get(e) : ea.get(e));
+            float l = max(dist(a.x, a.y, b.x, b.y), 1e-9);
+            float sc = (dx * (b.x - a.x) + dy * (b.y - a.y)) / l;
+            if (sc > bs) { bs = sc; best = e; }
+          }
+          if (best < 0) break;
+          used[best] = true;
+          int o = ea.get(best) == cur ? eb.get(best) : ea.get(best);
+          PVector b = verts.get(o);
+          float l = max(dist(a.x, a.y, b.x, b.y), 1e-9);
+          dx = (b.x - a.x) / l; dy = (b.y - a.y) / l;
+          pts.add(b.copy());
+          cur = o;
+        }
+        if (pts.size() < 2) break;
+        emit(out, pts);
+      }
+    }
+  }
+}
+
+int vertexId(ArrayList<PVector> verts, HashMap<Long, IntList> bins, ArrayList<IntList> adj, float x, float y, float eps) {
+  long bx = (long) Math.floor(x / eps), by = (long) Math.floor(y / eps);
+  for (long i = bx - 1; i <= bx + 1; i++) {
+    for (long j = by - 1; j <= by + 1; j++) {
+      IntList l = bins.get((i << 32) ^ (j & 0xffffffffL));
+      if (l == null) continue;
+      for (int k = 0; k < l.size(); k++) {
+        PVector v = verts.get(l.get(k));
+        if (abs(v.x - x) <= eps && abs(v.y - y) <= eps) return l.get(k);
+      }
+    }
+  }
+  long key = (bx << 32) ^ (by & 0xffffffffL);
+  IntList l = bins.get(key);
+  if (l == null) { l = new IntList(); bins.put(key, l); }
+  l.append(verts.size());
+  verts.add(new PVector(x, y));
+  adj.add(new IntList());
+  return verts.size() - 1;
+}
+
+// Serpentine hatch of an axis-aligned rectangle: one continuous zigzag stroke.
+void hatchRect(ArrayList<ArrayList<PVector>> out, float x0, float y0, float x1, float y1, float ang, float sp) {
+  if (x1 - x0 < 0.3 || y1 - y0 < 0.3) return;
+  float ux = cos(ang), uy = sin(ang), nx = -uy, ny = ux;
+  float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = 0.5 * dist(x0, y0, x1, y1);
+  ArrayList<PVector> zig = new ArrayList<PVector>();
+  boolean flip = false;
+  int kmax = floor(R / sp);
+  for (int k = -kmax; k <= kmax; k++) {
+    float px = cx + nx * k * sp, py = cy + ny * k * sp;
+    float tmin = -1e9, tmax = 1e9;
+    if (abs(ux) < 1e-6) { if (px < x0 || px > x1) continue; }
+    else { float ta = (x0 - px) / ux, tb = (x1 - px) / ux; tmin = max(tmin, min(ta, tb)); tmax = min(tmax, max(ta, tb)); }
+    if (abs(uy) < 1e-6) { if (py < y0 || py > y1) continue; }
+    else { float ta = (y0 - py) / uy, tb = (y1 - py) / uy; tmin = max(tmin, min(ta, tb)); tmax = min(tmax, max(ta, tb)); }
+    if (tmax - tmin < 0.05) continue;
+    PVector a = new PVector(px + ux * tmin, py + uy * tmin), b = new PVector(px + ux * tmax, py + uy * tmax);
+    if (flip) { zig.add(b); zig.add(a); } else { zig.add(a); zig.add(b); }
+    flip = !flip;
+  }
+  if (zig.size() >= 2) emit(out, zig);
+}
+
+ArrayList<PVector> rectPath(float x0, float y0, float x1, float y1) {
+  ArrayList<PVector> r = new ArrayList<PVector>();
+  r.add(new PVector(x0, y0)); r.add(new PVector(x1, y0)); r.add(new PVector(x1, y1));
+  r.add(new PVector(x0, y1)); r.add(new PVector(x0, y0));
+  return r;
+}
+
+// ----- 17: maze (recursive backtracker) ------
+void genMaze(ArrayList<ArrayList<PVector>> out) {
+  int cells = (int) pv(0), style = (int) pv(1);
+  float straight = pv(2), loops = pv(3);
+  boolean doors = pv(4) > 0.5;
+  float w = xmax - xmin, h = ymax - ymin;
+  float s = min(w, h) / cells;
+  int nx = max(1, floor(w / s + 1e-3)), ny = max(1, floor(h / s + 1e-3));
+  float ox = xmin + (w - nx * s) / 2, oy = ymin + (h - ny * s) / 2;
+
+  // hW[j * nx + i]: wall above cell (i, j), j = 0..ny.  vW[j * (nx + 1) + i]: wall left of cell (i, j), i = 0..nx
+  boolean[] hW = new boolean[(ny + 1) * nx], vW = new boolean[ny * (nx + 1)];
+  Arrays.fill(hW, true); Arrays.fill(vW, true);
+  int[] DX = { 1, 0, -1, 0 }, DY = { 0, 1, 0, -1 };
+  boolean[] vis = new boolean[nx * ny];
+  int[] stack = new int[nx * ny], lastDir = new int[nx * ny], cand = new int[4];
+  int sp = 0, start = (int) random(nx * ny);
+  vis[start] = true; stack[sp++] = start; lastDir[start] = (int) random(4);
+  while (sp > 0) {
+    int c = stack[sp - 1], ci = c % nx, cj = c / nx, nc = 0;
+    boolean straightOk = false;
+    for (int d = 0; d < 4; d++) {
+      int ni = ci + DX[d], nj = cj + DY[d];
+      if (ni < 0 || nj < 0 || ni >= nx || nj >= ny || vis[nj * nx + ni]) continue;
+      cand[nc++] = d;
+      if (d == lastDir[c]) straightOk = true;
+    }
+    if (nc == 0) { sp--; continue; }
+    int d = (straightOk && random(1) < straight) ? lastDir[c] : cand[(int) random(nc)];
+    if (d == 0) vW[cj * (nx + 1) + ci + 1] = false;
+    else if (d == 2) vW[cj * (nx + 1) + ci] = false;
+    else if (d == 1) hW[(cj + 1) * nx + ci] = false;
+    else hW[cj * nx + ci] = false;
+    int n = (cj + DY[d]) * nx + ci + DX[d];
+    vis[n] = true; lastDir[n] = d; stack[sp++] = n;
+  }
+  if (loops > 0) {                                     // knock out extra walls -> multiple routes
+    for (int j = 1; j < ny; j++) for (int i = 0; i < nx; i++) if (hW[j * nx + i] && random(1) < loops * 0.3) hW[j * nx + i] = false;
+    for (int j = 0; j < ny; j++) for (int i = 1; i < nx; i++) if (vW[j * (nx + 1) + i] && random(1) < loops * 0.3) vW[j * (nx + 1) + i] = false;
+  }
+  if (doors) { hW[0] = false; hW[ny * nx + nx - 1] = false; }
+
+  ArrayList<float[]> segs = new ArrayList<float[]>();
+  if (style == 0) {
+    for (int j = 0; j <= ny; j++) for (int i = 0; i < nx; i++)
+      if (hW[j * nx + i]) segs.add(new float[] { ox + i * s, oy + j * s, ox + (i + 1) * s, oy + j * s });
+    for (int j = 0; j < ny; j++) for (int i = 0; i <= nx; i++)
+      if (vW[j * (nx + 1) + i]) segs.add(new float[] { ox + i * s, oy + j * s, ox + i * s, oy + (j + 1) * s });
+  } else {
+    for (int j = 0; j < ny; j++) {
+      for (int i = 0; i < nx; i++) {
+        float x = ox + (i + 0.5) * s, y = oy + (j + 0.5) * s;
+        if (i + 1 < nx && !vW[j * (nx + 1) + i + 1]) segs.add(new float[] { x, y, x + s, y });
+        if (j + 1 < ny && !hW[(j + 1) * nx + i]) segs.add(new float[] { x, y, x, y + s });
+      }
+    }
+    if (doors) {
+      segs.add(new float[] { ox + 0.5 * s, oy, ox + 0.5 * s, oy + 0.5 * s });
+      segs.add(new float[] { ox + (nx - 0.5) * s, oy + (ny - 0.5) * s, ox + (nx - 0.5) * s, oy + ny * s });
+    }
+  }
+  chainSegments(segs, out);
+}
+
+// ----- 18: L-system ------
+void genLSystem(ArrayList<ArrayList<PVector>> out) {
+  int type = (int) pv(0), iters = (int) pv(1), smooth = (int) pv(4);
+  float tweak = pv(2), jitter = pv(3);
+  String axiom;
+  String[] rules;                  // pairs: symbol, replacement
+  float ang, heading = 0;
+  switch (type) {
+    case 0:  axiom = "F--F--F"; rules = new String[] { "F", "F+F--F+F" }; ang = 60; break;
+    case 1:  axiom = "FX"; rules = new String[] { "X", "X+YF+", "Y", "-FX-Y" }; ang = 90; break;
+    case 2:  axiom = "A"; rules = new String[] { "A", "A-B--B+A++AA+B-", "B", "+A-AA--A-B++B+A" }; ang = 60; break;
+    case 3:  axiom = "A"; rules = new String[] { "A", "B-A-B", "B", "A+B+A" }; ang = 60; break;
+    default: axiom = "X"; rules = new String[] { "X", "F+[[X]-X]-F[-FX]+X", "F", "FF" }; ang = 25; heading = -90; break;
+  }
+  StringBuilder str = new StringBuilder(axiom);
+  for (int it = 0; it < iters; it++) {                 // stops early once the string gets huge
+    StringBuilder nx = new StringBuilder(str.length() * 4);
+    for (int i = 0; i < str.length(); i++) {
+      char ch = str.charAt(i);
+      String rep = null;
+      for (int r = 0; r < rules.length; r += 2) if (rules[r].charAt(0) == ch) rep = rules[r + 1];
+      if (rep != null) nx.append(rep); else nx.append(ch);
+    }
+    if (nx.length() > 300000) break;
+    str = nx;
+  }
+
+  float a = radians(ang + tweak), hd = radians(heading), x = 0, y = 0;
+  ArrayList<ArrayList<PVector>> raw = new ArrayList<ArrayList<PVector>>();
+  ArrayList<float[]> stack = new ArrayList<float[]>();
+  ArrayList<PVector> cur = new ArrayList<PVector>();
+  cur.add(new PVector(0, 0));
+  for (int i = 0; i < str.length(); i++) {
+    char ch = str.charAt(i);
+    if (ch == 'F' || ch == 'A' || ch == 'B') {
+      x += cos(hd); y += sin(hd);
+      cur.add(new PVector(x, y));
+    } else if (ch == '+' || ch == '-') {
+      float t = a * (jitter > 0 ? 1 + random(-jitter, jitter) : 1);
+      hd += ch == '+' ? t : -t;
+    } else if (ch == '[') {
+      stack.add(new float[] { x, y, hd });
+    } else if (ch == ']' && !stack.isEmpty()) {
+      float[] st = stack.remove(stack.size() - 1);
+      if (cur.size() >= 2) raw.add(cur);
+      x = st[0]; y = st[1]; hd = st[2];
+      cur = new ArrayList<PVector>();
+      cur.add(new PVector(x, y));
+    }
+  }
+  if (cur.size() >= 2) raw.add(cur);
+  if (smooth > 0) for (int i = 0; i < raw.size(); i++) raw.set(i, chaikin(raw.get(i), smooth));
+  fitPaths(raw, out);
+}
+
+// ----- 19: guilloche (banknote rosette) ------
+void genGuilloche(ArrayList<ArrayList<PVector>> out) {
+  int lines = (int) pv(0), osc = (int) pv(1), lobesO = (int) pv(4), lobesI = (int) pv(5), res = (int) pv(7);
+  float rOut = pv(2), rIn = min(pv(3), pv(2)), depth = pv(6);
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  float R = min(xmax - xmin, ymax - ymin) / 2;
+  for (int k = 0; k < lines; k++) {
+    float ph = TWO_PI * k / lines;
+    ArrayList<PVector> pts = new ArrayList<PVector>(res + 1);
+    for (int i = 0; i <= res; i++) {
+      float t = TWO_PI * (i % res) / res;
+      float ro = R * rOut * (1 - depth * (0.5 - 0.5 * cos(lobesO * t)));
+      float ri = R * rIn * (1 - depth * (0.5 + 0.5 * cos(lobesI * t)));
+      float r = lerp(ri, ro, 0.5 + 0.5 * sin(osc * t + ph));
+      pts.add(new PVector(cx + cos(t) * r, cy + sin(t) * r));
+    }
+    emit(out, pts);
+  }
+}
+
+// ----- 20: Maurer rose ------
+void genMaurer(ArrayList<ArrayList<PVector>> out) {
+  int n = (int) pv(0), d = (int) pv(1), np = (int) pv(2), copies = (int) pv(3), dStep = (int) pv(4);
+  boolean rose = pv(5) > 0.5;
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  float R = min(xmax - xmin, ymax - ymin) / 2;
+  for (int c = 0; c < copies; c++) {
+    int dd = d + c * dStep;
+    ArrayList<PVector> pts = new ArrayList<PVector>(np + 1);
+    for (int k = 0; k <= np; k++) {
+      float th = radians((k * (long) dd) % 360);
+      float r = R * sin(n * th);
+      pts.add(new PVector(cx + cos(th) * r, cy + sin(th) * r));
+    }
+    emit(out, pts);
+  }
+  if (rose) {
+    int res = 2400;
+    ArrayList<PVector> pts = new ArrayList<PVector>(res + 1);
+    for (int i = 0; i <= res; i++) {
+      float th = TWO_PI * i / res, r = R * sin(n * th);
+      pts.add(new PVector(cx + cos(th) * r, cy + sin(th) * r));
+    }
+    emit(out, pts);
+  }
+}
+
+// ----- 21: phyllotaxis (sunflower seed pattern) ------
+void genPhyllotaxis(ArrayList<ArrayList<PVector>> out) {
+  int n = (int) pv(0), mark = (int) pv(2), rings = (int) pv(5), fam = (int) pv(6);
+  float golden = radians(137.50776 + pv(1)), size = pv(3), growth = pv(4);
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  float R = max(1, min(xmax - xmin, ymax - ymin) / 2 - (mark == 2 ? 0 : size / 2));
+  float c = R / sqrt(n);
+  PVector[] p = new PVector[n];
+  for (int i = 0; i < n; i++) {
+    float r = c * sqrt(i + 0.5), a = i * golden;
+    p[i] = new PVector(cx + cos(a) * r, cy + sin(a) * r);
+  }
+  if (mark == 2) {                                     // parastichies: two Fibonacci spiral families
+    int[] fib = { 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144 };
+    for (int f = fam; f <= fam + 1; f++) {
+      int step = fib[f];
+      for (int s = 0; s < step && s < n; s++) {
+        ArrayList<PVector> pts = new ArrayList<PVector>();
+        for (int i = s; i < n; i += step) pts.add(p[i]);
+        if (pts.size() >= 2) emit(out, pts);
+      }
+    }
+    return;
+  }
+  for (int i = 0; i < n; i++) {
+    float t = (i + 0.5) / n;
+    float d = size * lerp(1, 0.15 + 0.85 * sqrt(t), growth);
+    if (mark == 0) {
+      for (int k = 1; k <= rings; k++) {
+        float r = d / 2 * k / rings;
+        if (r < 0.1) continue;
+        emit(out, circlePath(p[i].x, p[i].y, r, constrain((int) (r * 10), 10, 60)));
+      }
+    } else {
+      float a = atan2(p[i].y - cy, p[i].x - cx);
+      for (int k = 0; k < rings; k++) {                // several short parallel dashes per seed
+        float off = (k - (rings - 1) / 2.0) * d * 0.25;
+        float ox = -sin(a) * off, oy = cos(a) * off;
+        ArrayList<PVector> l = new ArrayList<PVector>();
+        l.add(new PVector(p[i].x - cos(a) * d / 2 + ox, p[i].y - sin(a) * d / 2 + oy));
+        l.add(new PVector(p[i].x + cos(a) * d / 2 + ox, p[i].y + sin(a) * d / 2 + oy));
+        emit(out, l);
+      }
+    }
+  }
+}
+
+// ----- 22: recursive subdivision with hatched cells ------
+void genSubdivision(ArrayList<ArrayList<PVector>> out) {
+  int depth = (int) pv(0);
+  float minS = pv(1), var = pv(2), stop = pv(3), fill = pv(4), sp = pv(5), gap = pv(6);
+  ArrayList<float[]> leaves = new ArrayList<float[]>(), cuts = new ArrayList<float[]>();
+  subdivide(xmin, ymin, xmax, ymax, 0, depth, minS, var, stop, leaves, cuts);
+
+  if (gap <= 0) {
+    emit(out, rectPath(xmin, ymin, xmax, ymax));
+    for (float[] c : cuts) {
+      ArrayList<PVector> l = new ArrayList<PVector>();
+      l.add(new PVector(c[0], c[1])); l.add(new PVector(c[2], c[3]));
+      emit(out, l);
+    }
+  }
+  float g = gap / 2;
+  for (float[] r : leaves) {
+    float x0 = r[0] + g, y0 = r[1] + g, x1 = r[2] - g, y1 = r[3] - g;
+    boolean filled = random(1) < fill;
+    int style = (int) random(6);
+    if (x1 - x0 < 0.3 || y1 - y0 < 0.3) continue;
+    if (gap > 0) emit(out, rectPath(x0, y0, x1, y1));
+    if (!filled) continue;
+    switch (style) {
+      case 0: hatchRect(out, x0, y0, x1, y1, 0, sp); break;
+      case 1: hatchRect(out, x0, y0, x1, y1, HALF_PI, sp); break;
+      case 2: hatchRect(out, x0, y0, x1, y1, QUARTER_PI, sp); break;
+      case 3: hatchRect(out, x0, y0, x1, y1, -QUARTER_PI, sp); break;
+      case 4: hatchRect(out, x0, y0, x1, y1, 0, sp); hatchRect(out, x0, y0, x1, y1, HALF_PI, sp); break;
+      default:
+        for (float k = sp; x1 - x0 > 2 * k + 0.3 && y1 - y0 > 2 * k + 0.3; k += sp) emit(out, rectPath(x0 + k, y0 + k, x1 - k, y1 - k));
+    }
+  }
+}
+
+void subdivide(float x0, float y0, float x1, float y1, int lvl, int depth, float minS, float var, float stop,
+               ArrayList<float[]> leaves, ArrayList<float[]> cuts) {
+  float w = x1 - x0, h = y1 - y0;
+  boolean canX = w >= 2 * minS, canY = h >= 2 * minS;
+  if (lvl >= depth || (!canX && !canY) || (lvl >= 2 && random(1) < stop)) {
+    leaves.add(new float[] { x0, y0, x1, y1 });
+    return;
+  }
+  boolean vert = canX && (!canY || random(1) < w / (w + h));
+  float t = 0.5 + random(-var, var);
+  if (vert) {
+    float x = constrain(x0 + w * t, x0 + minS, x1 - minS);
+    cuts.add(new float[] { x, y0, x, y1 });
+    subdivide(x0, y0, x, y1, lvl + 1, depth, minS, var, stop, leaves, cuts);
+    subdivide(x, y0, x1, y1, lvl + 1, depth, minS, var, stop, leaves, cuts);
+  } else {
+    float y = constrain(y0 + h * t, y0 + minS, y1 - minS);
+    cuts.add(new float[] { x0, y, x1, y });
+    subdivide(x0, y0, x1, y, lvl + 1, depth, minS, var, stop, leaves, cuts);
+    subdivide(x0, y, x1, y1, lvl + 1, depth, minS, var, stop, leaves, cuts);
+  }
+}
+
+// ----- 23: warped grid (op-art lens bulges) ------
+void genWarpedGrid(ArrayList<ArrayList<PVector>> out) {
+  int lines = (int) pv(0), dir = (int) pv(1), nb = (int) pv(2), res = (int) pv(6);
+  float strength = pv(3), rad = pv(4), warp = pv(5);
+  noiseDetail(2, 0.5);
+  float w = xmax - xmin, h = ymax - ymin;
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  float r = rad * min(w, h), sp = min(w, h) / lines;
+  float[] bx = new float[nb], by = new float[nb];
+  for (int b = 0; b < nb; b++) {
+    if (nb == 1) { bx[b] = cx; by[b] = cy; }
+    else { bx[b] = xmin + w * random(0.15, 0.85); by[b] = ymin + h * random(0.15, 0.85); }
+  }
+  int nh = floor(h / sp), nv = floor(w / sp);
+  float oy = cy - nh * sp / 2, ox = cx - nv * sp / 2;
+  for (int pass = 0; pass < 2; pass++) {
+    if (pass == 0 && dir == 1) continue;
+    if (pass == 1 && dir == 0) continue;
+    int count = pass == 0 ? nh : nv;
+    for (int k = 0; k <= count; k++) {
+      ArrayList<PVector> pts = new ArrayList<PVector>(res + 1);
+      for (int i = 0; i <= res; i++) {
+        float u = i / (float) res;
+        float x = pass == 0 ? xmin + w * u : ox + k * sp;
+        float y = pass == 0 ? oy + k * sp : ymin + h * u;
+        float dx = 0, dy = 0;
+        for (int b = 0; b < nb; b++) {
+          float ex = x - bx[b], ey = y - by[b];
+          float f = strength * exp(-(ex * ex + ey * ey) / (r * r));
+          dx += ex * f; dy += ey * f;
+        }
+        if (warp > 0) {
+          dx += (noise(x * 0.02, y * 0.02, 3.3) - 0.5) * 2 * warp;
+          dy += (noise(x * 0.02, y * 0.02, 7.7) - 0.5) * 2 * warp;
+        }
+        pts.add(new PVector(x + dx, y + dy));
+      }
+      emit(out, pts);
+    }
+  }
+}
+
+// ----- 24: fractal tree ------
+int tCount, tBranches;
+float tAng, tAngVar, tRatio, tLenVar, tBend;
+
+void genTree(ArrayList<ArrayList<PVector>> out) {
+  int depth = (int) pv(0);
+  tBranches = (int) pv(1); tAng = radians(pv(2)); tAngVar = pv(3);
+  tRatio = pv(4); tLenVar = pv(5); tBend = radians(pv(6));
+  tCount = 0;
+  ArrayList<ArrayList<PVector>> raw = new ArrayList<ArrayList<PVector>>();
+  ArrayList<PVector> trunk = new ArrayList<PVector>();
+  trunk.add(new PVector(0, 0));
+  raw.add(trunk);
+  treeGrow(raw, trunk, 0, 0, -HALF_PI, 1, depth);
+  fitPaths(raw, out);
+}
+
+// The first child continues the parent's stroke, so each branch tip ends a pen-down run.
+void treeGrow(ArrayList<ArrayList<PVector>> raw, ArrayList<PVector> path, float x, float y, float a, float len, int d) {
+  if (d <= 0 || tCount > 200000) return;
+  int sub = 4;
+  for (int s = 0; s < sub; s++) {
+    a += tBend / sub;
+    x += cos(a) * len / sub; y += sin(a) * len / sub;
+    path.add(new PVector(x, y));
+  }
+  tCount += sub;
+  for (int b = 0; b < tBranches; b++) {
+    float spread = lerp(-tAng, tAng, b / (float) (tBranches - 1));
+    float na = a + spread + random(-1, 1) * tAng * tAngVar;
+    float nl = len * tRatio * (1 + random(-1, 1) * tLenVar);
+    ArrayList<PVector> p = path;
+    if (b > 0) { p = new ArrayList<PVector>(); p.add(new PVector(x, y)); raw.add(p); }
+    treeGrow(raw, p, x, y, na, nl, d - 1);
+  }
+}
+
+// ----- 25: Voronoi cells (with Lloyd relaxation and inset rings) ------
+void genVoronoi(ArrayList<ArrayList<PVector>> out) {
+  int n = (int) pv(0), relax = (int) pv(1), rings = (int) pv(3), smooth = (int) pv(5);
+  float bias = pv(2), gap = pv(4);
+  boolean borders = pv(6) > 0.5;
+  float w = xmax - xmin, h = ymax - ymin;
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  float[] px = new float[n], py = new float[n];
+  for (int i = 0; i < n; i++) {
+    float k = 1 - bias * random(1);
+    px[i] = cx + (random(xmin, xmax) - cx) * k;
+    py[i] = cy + (random(ymin, ymax) - cy) * k;
+  }
+  long[] keys = new long[n];
+  for (int it = 0; it < relax; it++) {                // Lloyd: move each site to its cell's centroid
+    float[] nx = new float[n], ny = new float[n];
+    for (int i = 0; i < n; i++) {
+      ArrayList<PVector> cell = vorCell(px, py, n, i, sortByDist(px, py, n, i, keys), 0);
+      PVector c = polyCentroid(cell);
+      nx[i] = c == null ? px[i] : c.x; ny[i] = c == null ? py[i] : c.y;
+    }
+    px = nx; py = ny;
+  }
+  ArrayList<float[]> segs = new ArrayList<float[]>();
+  for (int i = 0; i < n; i++) {
+    sortByDist(px, py, n, i, keys);
+    if (borders) {
+      ArrayList<PVector> cell = vorCell(px, py, n, i, keys, 0);
+      for (int k = 0; k < cell.size(); k++) {
+        PVector a = cell.get(k), b = cell.get((k + 1) % cell.size());
+        segs.add(new float[] { a.x, a.y, b.x, b.y });
+      }
+    }
+    for (int r = 1; r <= rings; r++) {
+      ArrayList<PVector> cell = vorCell(px, py, n, i, keys, r * gap);
+      if (cell.size() < 3) break;
+      emit(out, chaikinClosed(cell, smooth));
+    }
+  }
+  chainSegments(segs, out);
+}
+
+long[] sortByDist(float[] px, float[] py, int n, int i, long[] keys) {
+  for (int j = 0; j < n; j++) {
+    float d2 = j == i ? Float.MAX_VALUE : sq(px[j] - px[i]) + sq(py[j] - py[i]);
+    keys[j] = ((long) Float.floatToIntBits(d2) << 32) | j;    // non-negative floats sort like their bits
+  }
+  Arrays.sort(keys);
+  return keys;
+}
+
+// Cell of site i, shrunk inwards by 'inset' mm, built by clipping the drawing
+// area with the bisector half-planes of the nearest sites first.
+ArrayList<PVector> vorCell(float[] px, float[] py, int n, int i, long[] keys, float inset) {
+  ArrayList<PVector> poly = new ArrayList<PVector>();
+  if (xmax - xmin <= 2 * inset || ymax - ymin <= 2 * inset) return poly;
+  poly.add(new PVector(xmin + inset, ymin + inset)); poly.add(new PVector(xmax - inset, ymin + inset));
+  poly.add(new PVector(xmax - inset, ymax - inset)); poly.add(new PVector(xmin + inset, ymax - inset));
+  float maxR = polyReach(poly, px[i], py[i]);
+  for (int k = 0; k < n - 1; k++) {
+    int j = (int) (keys[k] & 0xffffffffL);
+    float dx = px[j] - px[i], dy = py[j] - py[i], dd = sqrt(dx * dx + dy * dy);
+    if (dd < 1e-6) continue;
+    if (dd / 2 - inset > maxR) break;                  // this and all farther bisectors miss the cell
+    float ux = dx / dd, uy = dy / dd;
+    poly = clipHalf(poly, ux, uy, ux * (px[i] + dx / 2) + uy * (py[i] + dy / 2) - inset);
+    if (poly.size() < 3) return new ArrayList<PVector>();
+    maxR = polyReach(poly, px[i], py[i]);
+  }
+  return poly;
+}
+
+float polyReach(ArrayList<PVector> poly, float x, float y) {
+  float m = 0;
+  for (PVector v : poly) m = max(m, dist(v.x, v.y, x, y));
+  return m;
+}
+
+// Keep the part of a convex polygon where nx*x + ny*y <= c.
+ArrayList<PVector> clipHalf(ArrayList<PVector> poly, float nx, float ny, float c) {
+  ArrayList<PVector> res = new ArrayList<PVector>(poly.size() + 1);
+  int n = poly.size();
+  for (int i = 0; i < n; i++) {
+    PVector a = poly.get(i), b = poly.get((i + 1) % n);
+    float da = nx * a.x + ny * a.y - c, db = nx * b.x + ny * b.y - c;
+    if (da <= 0) res.add(a);
+    if ((da <= 0) != (db <= 0)) {
+      float t = da / (da - db);
+      res.add(new PVector(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+    }
+  }
+  return res;
+}
+
+PVector polyCentroid(ArrayList<PVector> poly) {
+  float A = 0, sx = 0, sy = 0;
+  for (int i = 0; i < poly.size(); i++) {
+    PVector a = poly.get(i), b = poly.get((i + 1) % poly.size());
+    float cr = a.x * b.y - b.x * a.y;
+    A += cr; sx += (a.x + b.x) * cr; sy += (a.y + b.y) * cr;
+  }
+  if (abs(A) < 1e-9) return null;
+  return new PVector(sx / (3 * A), sy / (3 * A));
 }
 
 // ---------- SVG export ----------------------------------------------------

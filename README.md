@@ -6,7 +6,16 @@ Generative line art with a live-adjustable GUI, built as a single [Processing](h
 
 ## Features
 
-- **17 patterns** — flow field, wave lines, spirograph, noise rings, Lissajous, contour map, Truchet tiles, hatch shading, strange attractor, superformula, nested polygons, spiral, moire circles, circle packing, harmonograph, Hilbert curve, sunburst.
+- **26 patterns** — flow field, wave lines, spirograph, noise rings, Lissajous, contour map, Truchet tiles, hatch shading, strange attractor, superformula, nested polygons, spiral, moire circles, circle packing, harmonograph, Hilbert curve, sunburst, maze, L-system, guilloche, Maurer rose, phyllotaxis, subdivision, warped grid, fractal tree, Voronoi.
+  - **Maze** — recursive-backtracker maze drawn as walls or as its centre-line path (same seed on two layers = walls + solution-style path in a second pen). Wall segments are merged into long strokes to minimise pen lifts.
+  - **L-system** — Koch snowflake, dragon curve, Gosper curve, Sierpinski arrowhead and a branching plant, with angle tweak, jitter and smoothing.
+  - **Guilloche** — banknote-style rosettes: interleaved lines oscillating between two lobed envelopes.
+  - **Maurer rose** — straight chords stepping around a rose curve; optional rose outline and extra copies with a shifted step.
+  - **Phyllotaxis** — golden-angle sunflower layout drawn as circles, radial dashes or the Fibonacci spiral families.
+  - **Subdivision** — recursive rectangle splits, cells filled with serpentine (single-stroke) hatching, cross-hatching or concentric squares.
+  - **Warped grid** — op-art line grid bent by lens bulges (or pinches) and optional noise.
+  - **Fractal tree** — recursive branches with angle/length randomness and bend; each branch continues the parent stroke.
+  - **Voronoi** — Lloyd-relaxed cells with shared borders drawn once, plus optional smoothed inset rings ("pebbles").
 - **Up to 4 pen layers** — each with its own pattern, seed, parameters, pen colour, pen width, and scale/rotate/offset transform. Combine patterns, or plot each layer with a different pen.
 - **Live preview** — drag sliders, pick paper size (A5/A4/A3/Square, portrait or landscape), and see the result update immediately.
 - **SVG export** — real paper size in millimetres, one Inkscape layer per pen (or one file per pen), with optional pen-travel optimisation to reduce plotting time.
