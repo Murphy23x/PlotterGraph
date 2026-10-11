@@ -9,6 +9,7 @@
 //   with path clean-up (simplify, merge, dedupe), pen-travel optimisation,
 //   plot-time estimate, registration marks, pen test swatches, batch export
 // * text / image masks: keep a layer only inside or outside a shape
+//   (text in any font installed on the system)
 // * presets: save / load the complete setup as a .json file
 //
 // Keys:  S  quick-export into the "exports" folder next to this sketch
@@ -89,7 +90,14 @@ String maskText = "PLOT";
 PImage maskImg; PShape maskSvg; String maskPath = "";
 int maskVersion = 0;
 boolean[] maskBits; int maskW, maskH; String maskKey = "";
-PFont maskFont;
+PFont maskFont, uiFont;
+final String DEFAULT_MASK_FONT = "SansSerif.bold";
+String maskFontName = DEFAULT_MASK_FONT;
+String[] fontNames;                // every font installed on this system (PFont.list())
+PFont fontPreview;                 // the chosen font at panel size, for the picker
+boolean fontOpen = false;          // font list open?
+String fontFilter = "";            // typed while the font list is open
+int fontScroll = 0;                // first visible entry of the filtered font list
 
 // source photo for the Image pattern
 PImage photo; String photoPath = "";
@@ -111,7 +119,8 @@ void setup() {
   size(1400, 900);
   surface.setTitle("Generative Line Art");
   surface.setResizable(true);
-  textFont(createFont("SansSerif", 13));
+  uiFont = createFont("SansSerif", 13);
+  textFont(uiFont);
   pPaper     = new Param(null, "Paper", PAPER_NAMES, 1);
   pLandscape = new Param(null, "Landscape", false);
   pMargin    = new Param(null, "Margin (mm)", 0, 60, 15, false);
@@ -163,7 +172,9 @@ void setup() {
     Collections.addAll(allParams, L.pEnabled, L.pColor, L.pPen, L.pMode, L.pSeed, L.pScale, L.pRot, L.pOffX, L.pOffY, L.pMask);
     for (ArrayList<Param> ps : L.modeParams) allParams.addAll(ps);
   }
-  maskFont = createFont("SansSerif.bold", 96);
+  fontNames = PFont.list();
+  if (!Arrays.asList(fontNames).contains(DEFAULT_MASK_FONT)) fontNames = splice(fontNames, DEFAULT_MASK_FONT, 0);
+  setMaskFont(DEFAULT_MASK_FONT);
 }
 
 void draw() {
@@ -630,6 +641,7 @@ void action(int id) {
 }
 
 void keyPressed() {
+  if (fontOpen) { typeFontFilter(); return; }
   if (textFocus) { typeMaskText(); return; }
   Layer L = layers[curLayer];
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
@@ -662,6 +674,27 @@ void typeMaskText() {
   } else if (key >= 32 && key != DELETE && maskText.length() < 60) {
     maskText += key;
     maskChanged();
+  }
+}
+
+// Keyboard input while the font list is open: typing filters the list.
+void typeFontFilter() {
+  if (key == ESC) { key = 0; fontOpen = false; return; }
+  if (key == CODED) {
+    if (keyCode == UP) fontScroll--;
+    else if (keyCode == DOWN) fontScroll++;
+    return;
+  }
+  if (key == ENTER || key == RETURN) {               // pick the top visible match
+    ArrayList<String> f = filteredFonts();
+    if (f.size() > 0) setMaskFont(f.get(constrain(fontScroll, 0, f.size() - 1)));
+    fontOpen = false;
+  } else if (key == BACKSPACE) {
+    if (fontFilter.length() > 0) fontFilter = fontFilter.substring(0, fontFilter.length() - 1);
+    fontScroll = 0;
+  } else if (key >= 32 && key != DELETE && fontFilter.length() < 40) {
+    fontFilter += key;
+    fontScroll = 0;
   }
 }
 
@@ -726,7 +759,7 @@ class TabsW extends Widget {
   }
   void press() {
     int t = constrain(floor((mouseX - x) / (w / labels.length)), 0, labels.length - 1);
-    if (t != panelTab) { panelTab = t; panelScroll = 0; ddOpen = false; }
+    if (t != panelTab) { panelTab = t; panelScroll = 0; ddOpen = false; fontOpen = false; }
   }
 }
 
@@ -897,6 +930,73 @@ class DropdownW extends Widget {
   }
 }
 
+// Font picker for the text mask: shows the chosen font in its own typeface and
+// opens a scrollable, type-to-filter list of every font on the system.
+class FontW extends Widget {
+  FontW() { h = 40; }
+  float itemH() { return 22; }
+  int visibleRows() {
+    float below = height - PAD - (y + 42) - 30, above = y - 46 - 30;
+    return constrain(floor(max(below, above) / itemH()), 3, 18);
+  }
+  boolean opensUp() { return height - PAD - (y + 42) < y - 46 && height - PAD - (y + 42) < visibleRows() * itemH() + 30; }
+  float listY() { return opensUp() ? y - 4 - (visibleRows() * itemH() + 30) : y + 42; }
+  void display() {
+    textSize(11); fill(C_DIM); textAlign(LEFT, TOP); text("FONT", x, y);
+    noStroke(); fill(fontOpen ? C_TRACK : C_FIELD); rect(x, y + 16, w, 24, 4);
+    fill(C_TEXT); textAlign(LEFT, CENTER);
+    textFont(fontPreview); textSize(14);
+    String t = maskFontName;
+    while (t.length() > 1 && textWidth(t) > w - 40) t = t.substring(0, t.length() - 1);
+    text(t, x + 10, y + 27);
+    textFont(uiFont); textSize(12);
+    fill(C_ACCENT); triangle(x + w - 20, y + 24, x + w - 10, y + 24, x + w - 15, y + 32);
+  }
+  void overlay() {
+    if (!fontOpen) return;
+    ArrayList<String> f = filteredFonts();
+    int rowsN = visibleRows();
+    fontScroll = constrain(fontScroll, 0, max(0, f.size() - rowsN));
+    float lx = x, ly = listY(), ih = itemH(), lh = rowsN * ih + 30;
+    noStroke(); fill(0, 120); rect(lx + 3, ly + 4, w, lh, 6);
+    fill(C_FIELD); stroke(C_TRACK); strokeWeight(1); rect(lx, ly, w, lh, 6);
+    noStroke(); textSize(11); textAlign(LEFT, CENTER);
+    fill(fontFilter.isEmpty() ? C_DIM : C_TEXT);
+    text(fontFilter.isEmpty() ? "Type to filter (" + f.size() + " fonts)" : "Filter: " + fontFilter + "   (" + f.size() + ")", lx + 10, ly + 13);
+    stroke(C_TRACK); line(lx + 6, ly + 25, lx + w - 6, ly + 25); noStroke();
+    for (int r = 0; r < rowsN && fontScroll + r < f.size(); r++) {
+      String name = f.get(fontScroll + r);
+      float iy = ly + 28 + r * ih;
+      boolean over = mouseX >= lx && mouseX <= lx + w - 10 && mouseY >= iy && mouseY <= iy + ih;
+      boolean sel = name.equals(maskFontName);
+      fill(sel ? C_ACCENT : (over ? C_TRACK : C_FIELD)); rect(lx + 3, iy, w - 14, ih - 2, 4);
+      fill(sel ? C_PANEL : C_TEXT); textSize(12); textAlign(LEFT, CENTER); text(name, lx + 12, iy + ih / 2 - 1);
+    }
+    if (f.size() > rowsN) {                          // scroll bar
+      float track = rowsN * ih, vis = (float) rowsN / f.size();
+      fill(C_TRACK); rect(lx + w - 8, ly + 28 + (track - track * vis) * fontScroll / max(1, f.size() - rowsN), 3, track * vis, 2);
+    }
+  }
+  boolean overList() {
+    float ly = listY();
+    return mouseX >= x && mouseX <= x + w && mouseY >= ly && mouseY <= ly + visibleRows() * itemH() + 30;
+  }
+  void press() { fontOpen = true; fontFilter = ""; scrollToCurrent(); }
+  void scrollToCurrent() {
+    int i = filteredFonts().indexOf(maskFontName);
+    fontScroll = max(0, i - visibleRows() / 2);
+  }
+  // Returns true when the click landed inside the list (a font or the filter line).
+  boolean clickItem() {
+    if (!overList()) return false;
+    ArrayList<String> f = filteredFonts();
+    float ly = listY();
+    int r = floor((mouseY - ly - 28) / itemH());
+    if (mouseY >= ly + 28 && r < visibleRows() && fontScroll + r < f.size()) { setMaskFont(f.get(fontScroll + r)); fontOpen = false; }
+    return true;
+  }
+}
+
 class ButtonRow extends Widget {
   String[] labels; int[] ids;
   ButtonRow(String[] labels, int[] ids) { this.labels = labels; this.ids = ids; h = 30; }
@@ -1020,6 +1120,7 @@ void buildOutputTab(ArrayList<Widget> top) {
   top.add(new ChoiceW(pMaskSrc, 2, pMaskInv));
   if (pMaskSrc.i() == 0) {
     top.add(row(new TextFieldW("Text  ( | = new line)"), new SliderW(pMaskSize)));
+    top.add(new FontW());
   } else {
     top.add(new ButtonRow(new String[] { "Load mask image...", "Clear" }, new int[] { 10, 11 }));
     top.add(row(new SliderW(pMaskThr), new InfoW(maskPath.isEmpty() ? "No image loaded" : new File(maskPath).getName())));
@@ -1081,6 +1182,7 @@ void drawPanel() {
   text("S export | P save preset | L load | N seed | R randomize\nCtrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
 
   for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).overlay();
+  for (Widget w : panelFlat) if (w instanceof FontW) ((FontW) w).overlay();
 }
 
 String fmtParam(Param p) {
@@ -1091,6 +1193,12 @@ String fmtParam(Param p) {
 
 void mousePressed() {
   textFocus = false;
+  if (fontOpen) {
+    boolean inList = false;
+    for (Widget w : panelFlat) if (w instanceof FontW) inList |= ((FontW) w).clickItem();
+    if (!inList) fontOpen = false;
+    return;
+  }
   if (ddOpen) {
     for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).clickItem();
     ddOpen = false;
@@ -1115,6 +1223,7 @@ void mouseDragged() { if (activeW != null) activeW.drag(); }
 void mouseReleased() { activeW = null; activeParam = null; }
 
 void mouseWheel(MouseEvent event) {
+  if (fontOpen) { fontScroll += event.getCount() * 3; return; }
   if (ddOpen) return;
   for (Widget w : panelFlat) {
     if (w instanceof SliderW && w.hit()) {
@@ -1454,6 +1563,28 @@ ArrayList<ArrayList<PVector>> extras(Layer L) {
 void maskChanged() {
   maskVersion++;
   for (Layer L : layers) if (L.pMask.i() > 0) L.dirty = true;
+}
+
+// Font names matching the typed filter (every word must appear, any order).
+ArrayList<String> filteredFonts() {
+  ArrayList<String> out = new ArrayList<String>();
+  String[] words = splitTokens(fontFilter.toLowerCase());
+  for (String n : fontNames) {
+    String ln = n.toLowerCase();
+    boolean ok = true;
+    for (String wd : words) if (!ln.contains(wd)) { ok = false; break; }
+    if (ok) out.add(n);
+  }
+  return out;
+}
+
+void setMaskFont(String name) {
+  PFont f = null;
+  try { f = createFont(name, 96); } catch (Exception e) {}
+  if (f == null) { setStatus("Font not available: " + name); return; }
+  maskFont = f;
+  fontPreview = createFont(name, 14);
+  if (!name.equals(maskFontName)) { maskFontName = name; setStatus("Mask font: " + name); maskChanged(); }
 }
 
 void maskSelected(File f) { if (f != null) pendingMask = f; }
@@ -3443,6 +3574,7 @@ void savePreset(File f) {
   for (Param p : globals) st.setFloat(p.label, p.val);
   root.setJSONObject("settings", st);
   root.setString("maskText", maskText);
+  root.setString("maskFont", maskFontName);
   root.setString("maskImage", maskPath);
   root.setString("photo", photoPath);
   JSONArray arr = new JSONArray();
@@ -3500,6 +3632,11 @@ void loadPreset(File f) {
     }
     String mt = root.getString("maskText", maskText);
     if (!mt.equals(maskText)) { maskText = mt; maskChanged(); }
+    String mf = root.getString("maskFont", DEFAULT_MASK_FONT);
+    if (!mf.equals(maskFontName)) {
+      if (Arrays.asList(fontNames).contains(mf)) setMaskFont(mf);
+      else setStatus("Preset font \"" + mf + "\" is not installed; keeping " + maskFontName);
+    }
     String mimg = root.getString("maskImage", "");
     if (!mimg.isEmpty() && !mimg.equals(maskPath) && new File(mimg).exists()) loadMaskImage(new File(mimg));
     String ph = root.getString("photo", "");

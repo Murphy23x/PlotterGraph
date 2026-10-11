@@ -24,7 +24,7 @@ Generative line art with a live-adjustable GUI, built as a single [Processing](h
 - **Live preview** — drag sliders, pick paper size (A5/A4/A3/Square, portrait or landscape), and see the result update immediately.
 - **Undo / redo** — every parameter change (a whole slider drag counts as one step), up to 200 steps.
 - **Parameter locks** — right-click a pattern parameter or the seed to lock it; Randomize, New seed and batch export leave locked values alone.
-- **Masks** — keep a layer only inside or outside a shape: typed text (use `|` for a new line) or a loaded PNG/JPG/GIF/SVG silhouette, with threshold and invert.
+- **Masks** — keep a layer only inside or outside a shape: typed text (use `|` for a new line) in any font installed on your system, or a loaded PNG/JPG/GIF/SVG silhouette, with threshold and invert.
 - **Plot time estimate** — pen-down distance, pen-up travel and number of pen lifts per layer, turned into a plot time from your plotter's speeds.
 - **Path clean-up** — simplification (Ramer-Douglas-Peucker), joining paths whose ends nearly touch, dropping tiny fragments and duplicate paths, and nearest-neighbour travel optimisation. The preview, statistics and export all use the cleaned-up paths.
 - **Registration marks and pen test swatches** — optional corner crosshairs drawn by every pen (to line the paper up after a pen change) and a small test patch per pen, plotted first, in the bottom margin.
@@ -46,6 +46,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 - **New seed / Randomize / Reset** buttons (or `N`/`Space`, `R`) regenerate the current layer.
 - **Undo / Redo** buttons, or `Ctrl+Z` and `Ctrl+Y` / `Ctrl+Shift+Z` (`Cmd` on macOS).
 - **Mask** (Design tab, per layer): Off / Inside / Outside. Pick the text or image on the Output tab.
+- **Font** (Output tab, text mask): click to open a list of every installed font. Type to filter it (e.g. `bold`), scroll with the mouse wheel or Up/Down, then click a font or press Enter. The font is saved in presets; if a preset's font isn't installed, the current font stays.
 - **Export ...** (or `S`) opens a save dialog in the chosen format; a quick-save also writes into `GenerativeLineArt/exports/`.
 - **Save preset... / Load preset...** (or `P`, `L`) store/restore the whole setup as JSON in `GenerativeLineArt/presets/`.
 
