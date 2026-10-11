@@ -10,14 +10,14 @@ Use the [issue templates](https://github.com/Murphy23x/PlotterGraph/issues/new/c
 
 1. Fork the repository and create a branch from `Dev`.
 2. Open `GenerativeLineArt/GenerativeLineArt.pde` in the [Processing IDE](https://processing.org/download) (4.x) and make your change.
-3. Check that the sketch still runs, and that SVG export and preset save/load still work.
+3. Check that the sketch still runs, and that export (SVG, G-code, HPGL) and preset save/load still work.
 4. Open a pull request against `Dev`. CI builds the sketch and validates the example presets on every pull request.
 
 ### Guidelines
 
 - Keep it dependency-free: no extra Processing libraries.
 - Match the existing code style (2-space indentation, short comments where the intent isn't obvious).
-- **Adding a pattern:** add its name to `PATTERN_NAMES` and add its parameters and generator alongside the existing ones. Existing preset files store parameters by pattern name, so don't rename existing patterns.
+- **Adding a pattern:** add its name to `PATTERN_NAMES` and add its parameters and generator alongside the existing ones. Existing preset files store parameters by pattern name and by position, so don't rename existing patterns, and add new parameters at the end of a pattern's list.
 - **Adding an example preset:** save it with the `Save preset...` button, give it a descriptive name (not `preset_<timestamp>.json`, which is git-ignored), and put it in `GenerativeLineArt/presets/`.
 
 ## License

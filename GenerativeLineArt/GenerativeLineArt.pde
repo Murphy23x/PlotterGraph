@@ -2,18 +2,23 @@
 // ------------------------------------------------------------------
 // Processing 4 (Java mode). No extra libraries needed.
 //
-// * 26 patterns, up to 4 independent pen layers (each: pattern, seed,
-//   pen colour, pen width, scale / rotate / offset)
-// * live preview while you drag the sliders
-// * SVG export in millimetres, one Inkscape layer per pen (or one file
-//   per pen), with optional pen-travel optimisation
+// * 30 patterns (incl. image-driven), up to 4 independent pen layers (each:
+//   pattern, seed, pen colour, pen width, scale / rotate / offset, mask)
+// * live preview while you drag the sliders, undo / redo
+// * export as SVG (millimetres, one Inkscape layer per pen), G-code or HPGL,
+//   with path clean-up (simplify, merge, dedupe), pen-travel optimisation,
+//   plot-time estimate, registration marks, pen test swatches, batch export
+// * text / image masks: keep a layer only inside or outside a shape
 // * presets: save / load the complete setup as a .json file
 //
-// Keys:  S  quick-save SVG into the "exports" folder next to this sketch
+// Keys:  S  quick-export into the "exports" folder next to this sketch
 //        P  quick-save preset into "presets"      L  load preset...
 //        N / Space  new seed      R  randomize the current pattern
 //        1-4  select layer        Left / Right  previous / next pattern
-// Mouse wheel over a slider = fine adjustment.
+//        Ctrl+Z  undo             Ctrl+Y / Ctrl+Shift+Z  redo
+// Mouse wheel over a slider = fine adjustment, elsewhere in the panel = scroll.
+// Right-click a pattern parameter or the seed to lock it (Randomize,
+// New seed and batch export leave locked values alone).
 
 import java.util.*;
 import java.io.File;
@@ -28,8 +33,12 @@ final String[] PATTERN_NAMES = {
   "Contour map", "Truchet tiles", "Hatch shading", "Strange attractor", "Superformula",
   "Nested polygons", "Spiral", "Moire circles", "Circle packing", "Harmonograph",
   "Hilbert curve", "Sunburst", "Maze", "L-system", "Guilloche", "Maurer rose",
-  "Phyllotaxis", "Subdivision", "Warped grid", "Fractal tree", "Voronoi"
+  "Phyllotaxis", "Subdivision", "Warped grid", "Fractal tree", "Voronoi",
+  "Image", "Hex Truchet", "Penrose", "Hex maze"
 };
+final String[] FORMAT_NAMES = { "SVG", "G-code", "HPGL" };
+final String[] FORMAT_EXT   = { "svg", "gcode", "hpgl" };
+final String[] IMAGE_STYLES = { "TSP line", "Stipple", "Hatch", "Spiral", "Squiggle" };
 final String[] PAPER_NAMES = { "A5", "A4", "A3", "Square" };
 final float[][] PAPER_MM   = { {148, 210}, {210, 297}, {297, 420}, {250, 250} };
 final String[] PEN_NAMES   = { "Black", "Red", "Blue", "Green", "Orange", "Purple", "Teal", "Brown" };
@@ -50,6 +59,13 @@ final int C_HI     = 0xFFA5F3E4;
 Random ui = new Random();          // UI randomness (pattern generation uses randomSeed)
 
 Param pPaper, pLandscape, pMargin, pOptimize, pSeparate;
+Param pSpeedDown, pSpeedUp, pLiftTime;                 // plotter (time estimate, G-code, HPGL)
+Param pSimplify, pMerge, pMinLen, pDedupe;             // path clean-up
+Param pMarks, pPenTest;                                // extras
+Param pMaskSrc, pMaskSize, pMaskThr, pMaskInv;         // mask
+Param pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch;   // export
+ArrayList<Param> globals = new ArrayList<Param>();     // all page-level params (saved in presets)
+ArrayList<Param> allParams = new ArrayList<Param>();   // fixed order snapshot used by undo / redo
 Layer[] layers = new Layer[NUM_LAYERS];
 int curLayer = 0;
 Layer gen;                         // layer that is currently being generated
@@ -58,13 +74,35 @@ ArrayList<Widget> panelFlat = new ArrayList<Widget>();
 Widget activeW = null;
 Param activeParam = null;
 boolean ddOpen = false;            // pattern dropdown open?
+int panelTab = 0;                  // 0 = Design, 1 = Output
+float panelScroll = 0, maxScroll = 0;
+float clipTop = 0, clipBottom = 0; // visible band of the scrolling part of the panel
+boolean textFocus = false;         // mask text field has keyboard focus
+int lastChangeMs = -100000;        // last time any parameter changed (undo grouping)
+
+ArrayList<float[]> undoStack = new ArrayList<float[]>(), redoStack = new ArrayList<float[]>();
+float[] committed;
+
+// mask (text or image), rasterised at MASK_K pixels per mm
+final float MASK_K = 4;
+String maskText = "PLOT";
+PImage maskImg; PShape maskSvg; String maskPath = "";
+int maskVersion = 0;
+boolean[] maskBits; int maskW, maskH; String maskKey = "";
+PFont maskFont;
+
+// source photo for the Image pattern
+PImage photo; String photoPath = "";
+float[] photoLum; int photoW, photoH, photoVersion = 0;
+float imgX, imgY, imgW, imgH;      // where the photo lands on the page (mm)
 
 boolean previewStale = true;       // geometry changed -> redraw preview image
 float genW = 210, genH = 297;      // page size in mm
 float xmin, xmax, ymin, ymax;      // drawing area inside the margin
 PGraphics pg;
 
-File pendingExport, pendingPresetSave, pendingPresetLoad;
+File pendingExport, pendingPresetSave, pendingPresetLoad, pendingPhoto, pendingMask;
+boolean pendingBatch = false;
 String status = "";
 int statusMs = -100000;
 
@@ -79,28 +117,77 @@ void setup() {
   pMargin    = new Param(null, "Margin (mm)", 0, 60, 15, false);
   pOptimize  = new Param(null, "Optimize travel", true);
   pSeparate  = new Param(null, "File per layer", false);
-  pOptimize.geometry = false;
   pSeparate.geometry = false;
+
+  pSpeedDown = new Param(null, "Pen-down speed (mm/s)", 1, 150, 25, false);
+  pSpeedUp   = new Param(null, "Travel speed (mm/s)", 5, 300, 80, false);
+  pLiftTime  = new Param(null, "Pen lift (s)", 0, 1, 0.15, false);
+  pSpeedDown.geometry = false; pSpeedUp.geometry = false; pLiftTime.geometry = false;
+
+  pSimplify  = new Param(null, "Simplify (mm)", 0, 0.5, 0.05, false);
+  pMerge     = new Param(null, "Merge gap (mm)", 0, 1, 0.1, false);
+  pMinLen    = new Param(null, "Min length (mm)", 0, 3, 0.2, false);
+  pDedupe    = new Param(null, "Remove duplicates", true);
+
+  pMarks     = new Param(null, "Registration marks", false);
+  pPenTest   = new Param(null, "Pen test swatch", false);
+
+  pMaskSrc   = new Param(null, "Mask source", new String[] { "Text", "Image" }, 0);
+  pMaskSize  = new Param(null, "Text size (mm)", 10, 250, 90, false);
+  pMaskThr   = new Param(null, "Threshold", 0.05, 0.95, 0.5, false);
+  pMaskInv   = new Param(null, "Invert", false);
+  pMaskSrc.maskOnly = true; pMaskSize.maskOnly = true; pMaskThr.maskOnly = true; pMaskInv.maskOnly = true;
+
+  pFormat    = new Param(null, "Export format", FORMAT_NAMES, 0);
+  pLift      = new Param(null, "Pen lift", new String[] { "Z axis", "Servo M3" }, 0);
+  pFlipY     = new Param(null, "Origin bottom-left", true);
+  pZUp       = new Param(null, "Z up (mm)", 0, 20, 5, false);
+  pZDown     = new Param(null, "Z down (mm)", -5, 5, 0, false);
+  pServoUp   = new Param(null, "Servo up (S)", 0, 1000, 50, true);
+  pServoDown = new Param(null, "Servo down (S)", 0, 1000, 30, true);
+  pBatch     = new Param(null, "Batch count", 2, 50, 10, true);
+  for (Param p : new Param[] { pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch }) p.geometry = false;
+  pLift.wide = false;
+
+  Collections.addAll(globals, pPaper, pLandscape, pMargin, pOptimize, pSeparate, pSpeedDown, pSpeedUp, pLiftTime,
+    pSimplify, pMerge, pMinLen, pDedupe, pMarks, pPenTest, pMaskSrc, pMaskSize, pMaskThr, pMaskInv,
+    pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch);
+
   layers[0] = new Layer(0, 0, 0, true, 1234);
   layers[1] = new Layer(1, 3, 1, false, 42);
   layers[2] = new Layer(2, 2, 2, false, 7);
   layers[3] = new Layer(3, 4, 3, false, 99);
+
+  allParams.addAll(globals);
+  for (Layer L : layers) {
+    Collections.addAll(allParams, L.pEnabled, L.pColor, L.pPen, L.pMode, L.pSeed, L.pScale, L.pRot, L.pOffX, L.pOffY, L.pMask);
+    for (ArrayList<Param> ps : L.modeParams) allParams.addAll(ps);
+  }
+  maskFont = createFont("SansSerif.bold", 96);
 }
 
 void draw() {
   background(C_CANVAS);
-  if (pendingExport != null)     { File f = pendingExport;     pendingExport = null;     writeSVG(f); }
+  if (pendingExport != null)     { File f = pendingExport;     pendingExport = null;     writeExport(f); }
   if (pendingPresetSave != null) { File f = pendingPresetSave; pendingPresetSave = null; savePreset(f); }
   if (pendingPresetLoad != null) { File f = pendingPresetLoad; pendingPresetLoad = null; loadPreset(f); }
+  if (pendingPhoto != null)      { File f = pendingPhoto;      pendingPhoto = null;      loadPhoto(f); }
+  if (pendingMask != null)       { File f = pendingMask;       pendingMask = null;       loadMaskImage(f); }
 
   updatePage();
-  for (Layer L : layers) {
-    if (L.dirty && L.pEnabled.on()) { L.dirty = false; generateLayer(L); previewStale = true; }
-  }
+  if (pendingBatch) { pendingBatch = false; batchExport(); }
+  regenerate();
   buildPanel();
   drawPaper();
   drawPanel();
   drawStatusBar();
+  trackUndo();
+}
+
+void regenerate() {
+  for (Layer L : layers) {
+    if (L.dirty && L.pEnabled.on()) { L.dirty = false; generateLayer(L); previewStale = true; }
+  }
 }
 
 void updatePage() {
@@ -120,6 +207,8 @@ class Param {
   boolean isInt;
   boolean geometry = true;   // false: only changes how it looks/exports, not the paths
   boolean wide = false;      // takes a whole row in the panel
+  boolean maskOnly = false;  // global mask setting: only layers that use the mask regenerate
+  boolean locked = false;    // left alone by Randomize, New seed and batch export
   int type;                  // 0 slider, 1 toggle, 2 choice
   String[] opts;
 
@@ -140,8 +229,9 @@ class Param {
     if (isInt) v = round(v);
     if (v == val) return;
     val = v;
+    lastChangeMs = millis();
     if (!geometry) previewStale = true;
-    else if (owner == null) { for (Layer L : layers) L.dirty = true; }
+    else if (owner == null) { for (Layer L : layers) if (!maskOnly || L.pMask.i() > 0) L.dirty = true; }
     else owner.dirty = true;
   }
   int i() { return round(val); }
@@ -150,12 +240,12 @@ class Param {
 
 class Layer {
   int id;
-  Param pEnabled, pColor, pPen, pMode, pSeed, pScale, pRot, pOffX, pOffY;
+  Param pEnabled, pColor, pPen, pMode, pSeed, pScale, pRot, pOffX, pOffY, pMask;
   ArrayList<ArrayList<Param>> modeParams = new ArrayList<ArrayList<Param>>();
-  ArrayList<ArrayList<PVector>> paths = new ArrayList<ArrayList<PVector>>();
+  ArrayList<ArrayList<PVector>> paths = new ArrayList<ArrayList<PVector>>();   // final plot order
   boolean dirty = true;
   int nPaths, nPoints;
-  float length;
+  float length, travel;              // pen-down and pen-up distance (mm)
 
   Layer(int id, int mode, int colorIdx, boolean enabled, int seed) {
     this.id = id;
@@ -168,11 +258,15 @@ class Layer {
     pRot     = new Param(this, "Rotate (deg)", -180, 180, 0, false);
     pOffX    = new Param(this, "Offset X (mm)", -150, 150, 0, false);
     pOffY    = new Param(this, "Offset Y (mm)", -150, 150, 0, false);
+    pMask    = new Param(this, "Mask", new String[] { "Off", "Inside", "Outside" }, 0);
     pEnabled.geometry = false; pColor.geometry = false; pPen.geometry = false;
     for (int m = 0; m < PATTERN_NAMES.length; m++) modeParams.add(makeParams(this, m));
   }
   ArrayList<Param> params() { return modeParams.get(pMode.i()); }
   int penColor() { return PEN_COLORS[pColor.i()]; }
+  float seconds() {                  // estimated plot time
+    return length / pSpeedDown.val + travel / pSpeedUp.val + nPaths * 2 * pLiftTime.val;
+  }
 }
 
 Param P(Layer L, String label, float min, float max, float def, boolean isInt) {
@@ -403,6 +497,38 @@ ArrayList<Param> makeParams(Layer L, int mode) {
       l.add(P(L, "Smooth",            0,   4,   2, true));
       l.add(new Param(L, "Borders", true));
       break;
+    case 26: // Image
+      l.add(new Param(L, "Style", IMAGE_STYLES, 0));
+      l.add(P(L, "Points",          200, 12000, 5000, true));
+      l.add(P(L, "Lines / turns",    10, 250,  70, true));
+      l.add(P(L, "Contrast",        0.2,   3, 1.2, false));
+      l.add(P(L, "Brightness",     -0.5, 0.5,   0, false));
+      l.add(P(L, "Angle",             0, 180,  45, false));
+      l.add(P(L, "Amplitude",       0.1, 1.5, 0.9, false));
+      l.add(P(L, "Frequency",       0.1,   3, 0.8, false));
+      l.add(P(L, "Dot size (mm)",   0.2,   3, 0.6, false));
+      l.add(new Param(L, "Invert", false));
+      break;
+    case 27: // Hex Truchet
+      l.add(P(L, "Tiles",             3,  40,  12, true));
+      l.add(new Param(L, "Style", new String[] { "Arcs", "Mixed", "Random" }, 0));
+      l.add(P(L, "Lines/tile",        1,   5,   1, true));
+      l.add(P(L, "Bias",              0,   1, 0.5, false));
+      l.add(P(L, "Spread",            0, 0.9, 0.6, false));
+      l.add(new Param(L, "Hex outline", false));
+      break;
+    case 28: // Penrose
+      l.add(P(L, "Divisions",         1,   8,   5, true));
+      l.add(new Param(L, "Style", new String[] { "Rhombs", "Arcs", "Both" }, 0));
+      l.add(P(L, "Zoom",            0.3,   4,   1, false));
+      l.add(P(L, "Rotation",          0,  72,   0, false));
+      break;
+    case 29: // Hex maze
+      l.add(P(L, "Cells",             4,  60,  18, true));
+      l.add(new Param(L, "Style", new String[] { "Walls", "Path" }, 0));
+      l.add(P(L, "Loops",             0,   1,   0, false));
+      l.add(new Param(L, "Entrance/exit", true));
+      break;
   }
   return l;
 }
@@ -410,34 +536,109 @@ ArrayList<Param> makeParams(Layer L, int mode) {
 float pv(int i) { return gen.params().get(i).val; }
 
 void randomizeLayer(Layer L) {
-  L.pSeed.set(ui.nextInt(10000));
+  if (!L.pSeed.locked) L.pSeed.set(ui.nextInt(10000));
   for (Param p : L.params()) {
-    if (p.type == 1) continue;
+    if (p.type == 1 || p.locked) continue;
     float lo = p.min + 0.08 * (p.max - p.min);
     float hi = p.min + 0.75 * (p.max - p.min);
     p.set(lo + ui.nextFloat() * (hi - lo));
   }
 }
 
+void newSeed(Layer L) {
+  if (L.pSeed.locked) setStatus("Seed is locked (right-click it to unlock)");
+  else L.pSeed.set(ui.nextInt(10000));
+}
+
 void resetLayer(Layer L) {
   for (Param p : L.params()) p.set(p.def);
+}
+
+// Parameters that can be locked: the current pattern's parameters and the seed.
+boolean lockable(Param p) {
+  if (p == null || p.owner == null) return false;
+  return p == p.owner.pSeed || p.owner.params().contains(p);
+}
+
+// ---------- undo / redo ---------------------------------------------------
+// The state is the value of every parameter. Changes are committed once the
+// mouse is released and nothing has changed for a moment, so one slider drag
+// or a burst of mouse-wheel ticks becomes a single undo step.
+float[] captureState() {
+  float[] s = new float[allParams.size()];
+  for (int i = 0; i < s.length; i++) s[i] = allParams.get(i).val;
+  return s;
+}
+
+void applyState(float[] s) {
+  for (int i = 0; i < s.length; i++) allParams.get(i).set(s[i]);
+}
+
+void commitPending() {
+  float[] s = captureState();
+  if (committed == null) { committed = s; return; }
+  if (Arrays.equals(s, committed)) return;
+  undoStack.add(committed);
+  if (undoStack.size() > 200) undoStack.remove(0);
+  redoStack.clear();
+  committed = s;
+}
+
+void trackUndo() {
+  if (activeW != null || millis() - lastChangeMs < 300) return;
+  commitPending();
+}
+
+void undo() {
+  if (activeW != null) return;
+  commitPending();
+  if (undoStack.isEmpty()) { setStatus("Nothing to undo"); return; }
+  redoStack.add(committed);
+  committed = undoStack.remove(undoStack.size() - 1);
+  applyState(committed);
+  setStatus("Undo (" + undoStack.size() + " more)");
+}
+
+void redo() {
+  if (activeW != null) return;
+  commitPending();
+  if (redoStack.isEmpty()) { setStatus("Nothing to redo"); return; }
+  undoStack.add(committed);
+  committed = redoStack.remove(redoStack.size() - 1);
+  applyState(committed);
+  setStatus("Redo (" + redoStack.size() + " more)");
 }
 
 // ---------- actions -------------------------------------------------------
 void action(int id) {
   Layer L = layers[curLayer];
   switch (id) {
-    case 0: L.pSeed.set(ui.nextInt(10000)); break;
+    case 0: newSeed(L); break;
     case 1: randomizeLayer(L); break;
     case 2: resetLayer(L); break;
     case 3: requestExport(); break;
     case 4: requestPresetSave(); break;
     case 5: requestPresetLoad(); break;
+    case 6: undo(); break;
+    case 7: redo(); break;
+    case 8: pendingBatch = true; setStatus("Batch export running..."); break;
+    case 9: selectInput("Choose a photo / image", "photoSelected"); break;
+    case 10: selectInput("Choose a mask image (PNG, JPG, GIF or SVG)", "maskSelected"); break;
+    case 11: maskImg = null; maskSvg = null; maskPath = ""; maskChanged(); break;
+    case 12: photo = null; photoLum = null; photoPath = ""; photoChanged(); break;
   }
 }
 
 void keyPressed() {
+  if (textFocus) { typeMaskText(); return; }
   Layer L = layers[curLayer];
+  boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
+  if (ctrl) {
+    boolean shift = keyEvent.isShiftDown();
+    if (keyCode == 'Z') { if (shift) redo(); else undo(); }
+    else if (keyCode == 'Y') redo();
+    return;
+  }
   if (key == CODED) {
     if (keyCode == RIGHT) L.pMode.set((L.pMode.i() + 1) % PATTERN_NAMES.length);
     else if (keyCode == LEFT) L.pMode.set((L.pMode.i() + PATTERN_NAMES.length - 1) % PATTERN_NAMES.length);
@@ -446,19 +647,87 @@ void keyPressed() {
   if (key == 's' || key == 'S') quickSave();
   else if (key == 'p' || key == 'P') quickSavePreset();
   else if (key == 'l' || key == 'L') requestPresetLoad();
-  else if (key == 'n' || key == 'N' || key == ' ') L.pSeed.set(ui.nextInt(10000));
+  else if (key == 'n' || key == 'N' || key == ' ') newSeed(L);
   else if (key == 'r' || key == 'R') randomizeLayer(L);
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
+}
+
+// Keyboard input while the mask text field has focus.
+void typeMaskText() {
+  if (key == ESC) { key = 0; textFocus = false; return; }    // don't let Esc quit the sketch
+  if (key == CODED) return;
+  if (key == ENTER || key == RETURN || key == TAB) { textFocus = false; return; }
+  if (key == BACKSPACE) {
+    if (maskText.length() > 0) { maskText = maskText.substring(0, maskText.length() - 1); maskChanged(); }
+  } else if (key >= 32 && key != DELETE && maskText.length() < 60) {
+    maskText += key;
+    maskChanged();
+  }
 }
 
 // ---------- GUI widgets ---------------------------------------------------
 abstract class Widget {
   float x, y, w, h;
   Param p;                       // parameter this widget edits (if any)
+  boolean scrolls = false;       // part of the scrolling middle of the panel
   abstract void display();
   void press() {}
   void drag() {}
-  boolean hit() { return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h; }
+  boolean hit() {
+    if (scrolls && (mouseY < clipTop || mouseY > clipBottom)) return false;
+    return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+  }
+}
+
+// Small padlock drawn next to the label of a locked parameter.
+void drawLock(float x, float y) {
+  noFill(); stroke(C_HI); strokeWeight(1.4);
+  arc(x + 4, y + 5, 6, 7, PI, TWO_PI);
+  noStroke(); fill(C_HI); rect(x, y + 5, 8, 6, 1);
+}
+
+class InfoW extends Widget {
+  String t;
+  InfoW(String t) { this.t = t; h = 15 * (split(t, '\n').length) + 4; }
+  void display() {
+    fill(C_DIM); textSize(11); textAlign(LEFT, TOP);
+    textLeading(15);
+    text(t, x, y + 2);
+  }
+}
+
+class TextFieldW extends Widget {
+  String label;
+  TextFieldW(String label) { this.label = label; h = 40; }
+  void display() {
+    textSize(11); fill(C_DIM); textAlign(LEFT, TOP); text(label.toUpperCase(), x, y);
+    stroke(textFocus ? C_ACCENT : C_TRACK); strokeWeight(1); fill(C_FIELD);
+    rect(x, y + 16, w, 24, 4);
+    noStroke(); fill(C_TEXT); textSize(12); textAlign(LEFT, CENTER);
+    String t = maskText;
+    while (t.length() > 0 && textWidth(t) > w - 20) t = t.substring(1);
+    text(t, x + 8, y + 27);
+    if (textFocus && (millis() / 500) % 2 == 0) { stroke(C_ACCENT); line(x + 9 + textWidth(t), y + 20, x + 9 + textWidth(t), y + 35); }
+  }
+  void press() { textFocus = true; }
+}
+
+class TabsW extends Widget {
+  String[] labels = { "Design", "Output" };
+  TabsW() { h = 26; }
+  void display() {
+    float bw = w / labels.length;
+    for (int i = 0; i < labels.length; i++) {
+      boolean sel = (i == panelTab);
+      noStroke(); fill(sel ? C_ACCENT : C_FIELD); rect(x + i * bw, y, bw - 3, h, 5);
+      fill(sel ? C_PANEL : C_TEXT); textSize(12); textAlign(CENTER, CENTER);
+      text(labels[i], x + i * bw + (bw - 3) / 2, y + h / 2 - 1);
+    }
+  }
+  void press() {
+    int t = constrain(floor((mouseX - x) / (w / labels.length)), 0, labels.length - 1);
+    if (t != panelTab) { panelTab = t; panelScroll = 0; ddOpen = false; }
+  }
 }
 
 class Header extends Widget {
@@ -476,6 +745,7 @@ class SliderW extends Widget {
   void display() {
     textSize(12);
     fill(C_TEXT); textAlign(LEFT, TOP); text(p.label, x, y);
+    if (p.locked) drawLock(x + textWidth(p.label) + 6, y + 1);
     fill(C_ACCENT); textAlign(RIGHT, TOP); text(fmtParam(p), x + w, y);
     float ty = y + 25, x0 = x + 6, x1 = x + w - 6;
     strokeCap(ROUND); stroke(C_TRACK); strokeWeight(3); line(x0, ty, x1, ty);
@@ -500,6 +770,7 @@ class ToggleW extends Widget {
     if (p.on()) { stroke(C_PANEL); strokeWeight(2); line(x + 3, y + 10, x + 6.5, y + 14); line(x + 6.5, y + 14, x + 12, y + 6); }
     noStroke(); fill(C_TEXT); textSize(12); textAlign(LEFT, CENTER);
     text(p.label, x + 24, y + 10);
+    if (p.locked) drawLock(x + 30 + textWidth(p.label), y + 4);
   }
   void press() { p.set(p.on() ? 0 : 1); }
 }
@@ -515,6 +786,7 @@ class ChoiceW extends Widget {
   boolean overExtra() { return extra != null && mouseY < y + 16 && mouseX > x + w - 90; }
   void display() {
     textSize(11); fill(C_DIM); textAlign(LEFT, TOP); text(p.label.toUpperCase(), x, y);
+    if (p.locked) drawLock(x + textWidth(p.label.toUpperCase()) + 6, y);
     if (extra != null) {
       float ex = x + w - 88;
       stroke(C_TRACK); strokeWeight(1); fill(extra.on() ? C_ACCENT : C_FIELD); rect(ex, y, 12, 12, 2);
@@ -674,34 +946,22 @@ class RowW extends Widget {
 
 Widget row(Widget a, Widget b) { return new RowW(new Widget[] { a, b }, new float[] { 1, 1 }); }
 
-float stack(ArrayList<Widget> ws, float y) {
+float stack(ArrayList<Widget> ws, float y, boolean scrolls) {
   for (Widget w : ws) {
     w.x = PAD; w.w = PANEL_W - 2 * PAD; w.y = y;
     if (w instanceof RowW) {
       RowW r = (RowW) w;
       r.arrange();
-      for (Widget k : r.kids) panelFlat.add(k);
-    } else panelFlat.add(w);
+      for (Widget k : r.kids) { k.scrolls = scrolls; panelFlat.add(k); }
+    } else { w.scrolls = scrolls; panelFlat.add(w); }
     y += w.h + GAP;
   }
   return y;
 }
 
-void buildPanel() {
-  Layer L = layers[curLayer];
-  ArrayList<Widget> top = new ArrayList<Widget>();
-  top.add(new ChoiceW(pPaper, 4, pLandscape));
-  top.add(new SliderW(pMargin));
-  top.add(new Header("PEN LAYERS  (each layer = one pen)"));
-  top.add(new LayerTabsW());
-  top.add(new RowW(new Widget[] { new ToggleW(L.pEnabled), new SwatchW(L.pColor) }, new float[] { 1, 2 }));
-  top.add(new DropdownW(L.pMode));
-  top.add(row(new SliderW(L.pPen), new SliderW(L.pSeed)));
-  top.add(new ButtonRow(new String[] { "New seed", "Randomize", "Reset" }, new int[] { 0, 1, 2 }));
-  top.add(new Header("PATTERN PARAMETERS"));
-
+void addParamWidgets(ArrayList<Widget> top, ArrayList<Param> ps) {
   Widget pending = null;
-  for (Param p : L.params()) {
+  for (Param p : ps) {
     Widget wd = p.type == 1 ? new ToggleW(p) : (p.type == 2 ? new ChoiceW(p, p.opts.length, null) : new SliderW(p));
     if (p.wide) {
       if (pending != null) { top.add(new RowW(new Widget[] { pending }, new float[] { 1, 1 })); pending = null; }
@@ -710,35 +970,115 @@ void buildPanel() {
     else { top.add(row(pending, wd)); pending = null; }
   }
   if (pending != null) top.add(new RowW(new Widget[] { pending }, new float[] { 1, 1 }));
+}
+
+void buildDesignTab(ArrayList<Widget> top) {
+  Layer L = layers[curLayer];
+  top.add(new ChoiceW(pPaper, 4, pLandscape));
+  top.add(new SliderW(pMargin));
+  top.add(new Header("PEN LAYERS  (each layer = one pen)"));
+  top.add(new LayerTabsW());
+  top.add(new RowW(new Widget[] { new ToggleW(L.pEnabled), new SwatchW(L.pColor) }, new float[] { 1, 2 }));
+  top.add(new DropdownW(L.pMode));
+  top.add(row(new SliderW(L.pPen), new SliderW(L.pSeed)));
+  top.add(new ButtonRow(new String[] { "New seed", "Randomize", "Reset", "Undo", "Redo" }, new int[] { 0, 1, 2, 6, 7 }));
+  top.add(new Header("PATTERN PARAMETERS  (right-click = lock)"));
+  if (L.pMode.i() == 26) {
+    top.add(new ButtonRow(new String[] { "Load image...", "Use demo" }, new int[] { 9, 12 }));
+    top.add(new InfoW(photo == null ? "No image loaded: showing a built-in demo" : "Image: " + new File(photoPath).getName()));
+  }
+  addParamWidgets(top, L.params());
 
   top.add(new Header("LAYER TRANSFORM"));
   top.add(row(new SliderW(L.pScale), new SliderW(L.pRot)));
   top.add(row(new SliderW(L.pOffX), new SliderW(L.pOffY)));
+  top.add(new ChoiceW(L.pMask, 3, null));
+}
+
+void buildOutputTab(ArrayList<Widget> top) {
+  top.add(new Header("PLOT TIME ESTIMATE"));
+  top.add(row(new SliderW(pSpeedDown), new SliderW(pSpeedUp)));
+  top.add(new RowW(new Widget[] { new SliderW(pLiftTime) }, new float[] { 1, 1 }));
+  StringBuilder est = new StringBuilder();
+  for (Layer L : layers) {
+    if (!L.pEnabled.on()) continue;
+    if (est.length() > 0) est.append('\n');
+    est.append("Layer ").append(L.id + 1).append("  ").append(fmtTime(L.seconds())).append("   ")
+      .append(String.format(Locale.US, "%.1f m down, %.1f m travel, %d lifts", L.length / 1000, L.travel / 1000, L.nPaths));
+  }
+  top.add(new InfoW(est.length() == 0 ? "No layers enabled" : est.toString()));
+
+  top.add(new Header("PATH CLEAN-UP"));
+  top.add(row(new SliderW(pSimplify), new SliderW(pMerge)));
+  top.add(row(new SliderW(pMinLen), new ToggleW(pDedupe)));
+  top.add(row(new ToggleW(pOptimize), new ToggleW(pSeparate)));
+
+  top.add(new Header("EXTRAS  (drawn by every enabled pen)"));
+  top.add(row(new ToggleW(pMarks), new ToggleW(pPenTest)));
+
+  top.add(new Header("MASK  (switch it on per layer, Design tab)"));
+  top.add(new ChoiceW(pMaskSrc, 2, pMaskInv));
+  if (pMaskSrc.i() == 0) {
+    top.add(row(new TextFieldW("Text  ( | = new line)"), new SliderW(pMaskSize)));
+  } else {
+    top.add(new ButtonRow(new String[] { "Load mask image...", "Clear" }, new int[] { 10, 11 }));
+    top.add(row(new SliderW(pMaskThr), new InfoW(maskPath.isEmpty() ? "No image loaded" : new File(maskPath).getName())));
+  }
+
+  top.add(new Header("EXPORT"));
+  top.add(new ChoiceW(pFormat, 3, null));
+  if (pFormat.i() == 1) {
+    top.add(row(new ChoiceW(pLift, 2, null), new ToggleW(pFlipY)));
+    if (pLift.i() == 0) top.add(row(new SliderW(pZUp), new SliderW(pZDown)));
+    else top.add(row(new SliderW(pServoUp), new SliderW(pServoDown)));
+  }
+  top.add(row(new SliderW(pBatch), new ButtonRow(new String[] { "Batch export" }, new int[] { 8 })));
+}
+
+void buildPanel() {
+  ArrayList<Widget> top = new ArrayList<Widget>();
+  if (panelTab == 0) buildDesignTab(top);
+  else buildOutputTab(top);
 
   ArrayList<Widget> bottom = new ArrayList<Widget>();
   bottom.add(new ButtonRow(new String[] { "Save preset...", "Load preset..." }, new int[] { 4, 5 }));
-  bottom.add(row(new ToggleW(pOptimize), new ToggleW(pSeparate)));
-  Widget exp = new ButtonRow(new String[] { "Export SVG..." }, new int[] { 3 });
+  Widget exp = new ButtonRow(new String[] { "Export " + FORMAT_NAMES[pFormat.i()] + "..." }, new int[] { 3 });
   exp.h = 36;
   bottom.add(exp);
 
   panelFlat = new ArrayList<Widget>();
-  stack(top, 44);
+  TabsW tabs = new TabsW();
+  tabs.x = PANEL_W - PAD - 150; tabs.y = 10; tabs.w = 150;
+  panelFlat.add(tabs);
+
   float bh = 0;
   for (Widget w : bottom) bh += w.h + GAP;
-  stack(bottom, height - PAD - bh + GAP);
+  float bottomY = height - PAD - bh + GAP;
+  clipTop = 46;
+  clipBottom = bottomY - 42;                       // room for the hint text
+  float contentH = 0;
+  for (Widget w : top) contentH += w.h + GAP;
+  maxScroll = max(0, contentH - (clipBottom - clipTop));
+  panelScroll = constrain(panelScroll, 0, maxScroll);
+  stack(top, clipTop - panelScroll, true);
+  stack(bottom, bottomY, false);
 }
 
 void drawPanel() {
   noStroke(); fill(C_PANEL); rect(0, 0, PANEL_W, height);
+  clip(0, clipTop - 2, PANEL_W, clipBottom - clipTop + 4);
+  for (Widget w : panelFlat) if (w.scrolls) w.display();
+  noClip();
+  if (maxScroll > 0) {                              // scroll bar
+    float track = clipBottom - clipTop, vis = track / (track + maxScroll);
+    noStroke(); fill(C_TRACK);
+    rect(PANEL_W - 6, clipTop + (track - track * vis) * panelScroll / maxScroll, 3, track * vis, 2);
+  }
   fill(C_TEXT); textSize(16); textAlign(LEFT, TOP); text("Generative Line Art", PAD, 14);
-  for (Widget w : panelFlat) w.display();
+  for (Widget w : panelFlat) if (!w.scrolls) w.display();
 
-  // hint text above the bottom group
-  float by = height;
-  for (Widget w : panelFlat) if (w instanceof ButtonRow && ((ButtonRow) w).ids[0] == 4) by = w.y;
-  fill(C_DIM); textSize(11); textAlign(LEFT, BOTTOM);
-  text("S save SVG | P save preset | L load | N seed | R randomize\n1-4 layer | arrows = pattern | wheel over slider = fine", PAD, by - 8);
+  fill(C_DIM); textSize(11); textAlign(LEFT, BOTTOM); textLeading(14);
+  text("S export | P save preset | L load | N seed | R randomize\nCtrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
 
   for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).overlay();
 }
@@ -750,12 +1090,23 @@ String fmtParam(Param p) {
 }
 
 void mousePressed() {
+  textFocus = false;
   if (ddOpen) {
     for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).clickItem();
     ddOpen = false;
     return;
   }
   if (mouseX > PANEL_W) return;
+  if (mouseButton == RIGHT) {                       // toggle a parameter lock
+    for (Widget w : panelFlat) {
+      if (w.hit() && lockable(w.p)) {
+        w.p.locked = !w.p.locked;
+        setStatus(w.p.label + (w.p.locked ? " locked" : " unlocked"));
+        break;
+      }
+    }
+    return;
+  }
   for (Widget w : panelFlat) {
     if (w.hit()) { activeW = w; activeParam = (w instanceof SliderW) ? w.p : null; w.press(); break; }
   }
@@ -770,8 +1121,10 @@ void mouseWheel(MouseEvent event) {
       Param p = w.p;
       float step = p.isInt ? 1 : (p.max - p.min) / 100.0;
       p.set(p.val - event.getCount() * step);
+      return;
     }
   }
+  if (mouseX < PANEL_W) panelScroll = constrain(panelScroll + event.getCount() * 40, 0, maxScroll);
 }
 
 // ---------- preview -------------------------------------------------------
@@ -816,12 +1169,14 @@ void renderPreview(int pw, int ph) {
 
 void drawStatusBar() {
   fill(C_PANEL); noStroke(); rect(PANEL_W, height - 24, width - PANEL_W, 24);
-  int paths = 0, pts = 0, active = 0; float len = 0;
-  for (Layer L : layers) if (L.pEnabled.on()) { active++; paths += L.nPaths; pts += L.nPoints; len += L.length; }
+  int paths = 0, pts = 0, active = 0; float len = 0, trav = 0, secs = 0;
+  for (Layer L : layers) if (L.pEnabled.on()) {
+    active++; paths += L.nPaths; pts += L.nPoints; len += L.length; trav += L.travel; secs += L.seconds();
+  }
   textSize(12); textAlign(LEFT, CENTER); fill(C_DIM);
   String info = PAPER_NAMES[pPaper.i()] + " " + (int) genW + " x " + (int) genH + " mm  |  "
     + active + (active == 1 ? " layer  |  " : " layers  |  ") + paths + " paths  |  " + pts + " points  |  pen-down "
-    + String.format(Locale.US, "%.1f", len / 1000.0) + " m";
+    + String.format(Locale.US, "%.1f m  |  travel %.1f m  |  plot time ", len / 1000.0, trav / 1000.0) + fmtTime(secs);
   text(info, PANEL_W + 14, height - 12);
   if (millis() - statusMs < 6000) {
     fill(C_ACCENT); textAlign(RIGHT, CENTER);
@@ -830,6 +1185,13 @@ void drawStatusBar() {
 }
 
 void setStatus(String s) { status = s; statusMs = millis(); }
+
+String fmtTime(float s) {
+  if (s < 60) return "~" + round(s) + " s";
+  int m = round(s / 60);
+  if (m < 60) return "~" + m + " min";
+  return "~" + (m / 60) + " h " + nf(m % 60, 2) + " min";
+}
 
 // ---------- geometry generation ------------------------------------------
 void generateLayer(Layer L) {
@@ -864,6 +1226,10 @@ void generateLayer(Layer L) {
     case 23: genWarpedGrid(out); break;
     case 24: genTree(out); break;
     case 25: genVoronoi(out); break;
+    case 26: genImage(out); break;
+    case 27: genHexTruchet(out); break;
+    case 28: genPenrose(out); break;
+    case 29: genHexMaze(out); break;
   }
 
   // per-layer transform about the centre of the drawing area
@@ -881,13 +1247,312 @@ void generateLayer(Layer L) {
     }
     out = out2;
   }
+  if (L.pMask.i() > 0) out = applyMask(out, L.pMask.i() == 1);
+  out = cleanUp(out);
+  ArrayList<ArrayList<PVector>> ex = extras(L);   // pen test first, so a bad pen shows up straight away
+  if (!ex.isEmpty()) { ex.addAll(out); out = ex; }
   L.paths = out;
 
-  L.nPaths = out.size(); L.nPoints = 0; L.length = 0;
+  L.nPaths = out.size(); L.nPoints = 0; L.length = 0; L.travel = 0;
+  float px = 0, py = 0;                            // the plotter starts and ends at the origin
   for (ArrayList<PVector> p : out) {
     L.nPoints += p.size();
-    for (int i = 1; i < p.size(); i++) L.length += PVector.dist(p.get(i - 1), p.get(i));
+    L.length += pathLength(p);
+    L.travel += dist(px, py, p.get(0).x, p.get(0).y);
+    px = p.get(p.size() - 1).x; py = p.get(p.size() - 1).y;
   }
+  L.travel += dist(px, py, 0, 0);
+}
+
+float pathLength(ArrayList<PVector> p) {
+  float l = 0;
+  for (int i = 1; i < p.size(); i++) l += PVector.dist(p.get(i - 1), p.get(i));
+  return l;
+}
+
+// ---------- path clean-up --------------------------------------------------
+// Simplify, drop tiny bits and duplicates, then order (and join) the paths.
+ArrayList<ArrayList<PVector>> cleanUp(ArrayList<ArrayList<PVector>> in) {
+  float tol = pSimplify.val, minLen = pMinLen.val;
+  HashSet<Long> seen = pDedupe.on() ? new HashSet<Long>() : null;
+  ArrayList<ArrayList<PVector>> res = new ArrayList<ArrayList<PVector>>(in.size());
+  for (ArrayList<PVector> p : in) {
+    if (p.size() < 2) continue;
+    if (tol > 0 && p.size() > 2) p = simplifyPath(p, tol);
+    if (minLen > 0 && pathLength(p) < minLen) continue;
+    if (seen != null && !seen.add(pathKey(p))) continue;
+    res.add(p);
+  }
+  return orderPaths(res, pOptimize.on(), pMerge.val);
+}
+
+// Direction-independent hash of a path (points rounded to 0.01 mm).
+long pathKey(ArrayList<PVector> p) {
+  long hf = p.size(), hb = p.size();
+  int n = p.size();
+  for (int i = 0; i < n; i++) {
+    PVector a = p.get(i), b = p.get(n - 1 - i);
+    hf = hf * 1000003L + Math.round(a.x * 100) * 31L + Math.round(a.y * 100);
+    hb = hb * 1000003L + Math.round(b.x * 100) * 31L + Math.round(b.y * 100);
+  }
+  return Math.min(hf, hb);
+}
+
+// Ramer-Douglas-Peucker: drop points that stay within 'tol' mm of the simplified line.
+ArrayList<PVector> simplifyPath(ArrayList<PVector> p, float tol) {
+  int n = p.size();
+  boolean[] keep = new boolean[n];
+  keep[0] = true; keep[n - 1] = true;
+  IntList st = new IntList();
+  st.append(0); st.append(n - 1);
+  while (st.size() > 0) {
+    int b = st.remove(st.size() - 1), a = st.remove(st.size() - 1);
+    PVector pa = p.get(a), pb = p.get(b);
+    float dx = pb.x - pa.x, dy = pb.y - pa.y, ll = dx * dx + dy * dy;
+    float best = -1; int bi = -1;
+    for (int i = a + 1; i < b; i++) {
+      PVector q = p.get(i);
+      float d;
+      if (ll < 1e-12) d = sq(q.x - pa.x) + sq(q.y - pa.y);
+      else {
+        float t = constrain(((q.x - pa.x) * dx + (q.y - pa.y) * dy) / ll, 0, 1);
+        d = sq(q.x - pa.x - t * dx) + sq(q.y - pa.y - t * dy);
+      }
+      if (d > best) { best = d; bi = i; }
+    }
+    if (bi >= 0 && best > tol * tol) {
+      keep[bi] = true;
+      st.append(a); st.append(bi); st.append(bi); st.append(b);
+    }
+  }
+  ArrayList<PVector> r = new ArrayList<PVector>();
+  for (int i = 0; i < n; i++) if (keep[i]) r.add(p.get(i));
+  return r;
+}
+
+// Greedy nearest-neighbour ordering (paths may be reversed) using a grid of
+// path end points, so it stays fast for tens of thousands of paths. Paths
+// that start within 'gap' mm of where the previous one ended are joined into
+// one stroke. With optimize off the order is kept and only joining happens.
+ArrayList<ArrayList<PVector>> orderPaths(ArrayList<ArrayList<PVector>> in, boolean optimize, float gap) {
+  int n = in.size();
+  ArrayList<ArrayList<PVector>> out = new ArrayList<ArrayList<PVector>>(n);
+  if (n == 0) return out;
+  float cs = 1, x0 = 0, y0 = 0;
+  int gw = 1, gh = 1;
+  IntList[] grid = null;
+  boolean[] used = new boolean[n];
+  if (optimize) {
+    x0 = 1e9; y0 = 1e9; float x1 = -1e9, y1 = -1e9;
+    for (ArrayList<PVector> p : in) for (int e = 0; e < 2; e++) {
+      PVector v = e == 0 ? p.get(0) : p.get(p.size() - 1);
+      x0 = min(x0, v.x); y0 = min(y0, v.y); x1 = max(x1, v.x); y1 = max(y1, v.y);
+    }
+    cs = max(max(0.25, sqrt(max(1, (x1 - x0) * (y1 - y0)) / n)), max(x1 - x0, y1 - y0) / 1000);
+    gw = floor((x1 - x0) / cs) + 1; gh = floor((y1 - y0) / cs) + 1;
+    grid = new IntList[gw * gh];
+    for (int i = 0; i < n; i++) for (int e = 0; e < 2; e++) {
+      ArrayList<PVector> p = in.get(i);
+      PVector v = e == 0 ? p.get(0) : p.get(p.size() - 1);
+      int c = gridCell(v.x, v.y, x0, y0, cs, gw, gh);
+      if (grid[c] == null) grid[c] = new IntList();
+      grid[c].append(i * 2 + e);
+    }
+  }
+  float cx = 0, cy = 0;
+  ArrayList<PVector> last = null;
+  for (int k = 0; k < n; k++) {
+    int best = k; boolean rev = false;
+    if (optimize) {
+      best = -1;
+      float bd = Float.MAX_VALUE;
+      int gx = constrain(floor((cx - x0) / cs), 0, gw - 1), gy = constrain(floor((cy - y0) / cs), 0, gh - 1);
+      // lower bound for anything in ring r: (r - 1) cells, or the distance to the grid when starting outside it
+      float ox = max(0, max(x0 - cx, cx - (x0 + gw * cs))), oy = max(0, max(y0 - cy, cy - (y0 + gh * cs)));
+      float base = sqrt(ox * ox + oy * oy);
+      for (int r = 0; r <= max(gw, gh); r++) {
+        if (best >= 0 && max(base, (r - 1) * cs) > sqrt(bd)) break;
+        for (int j = gy - r; j <= gy + r; j++) {
+          if (j < 0 || j >= gh) continue;
+          boolean edgeRow = (j == gy - r || j == gy + r);
+          for (int i = gx - r; i <= gx + r; i += edgeRow ? 1 : 2 * r) {
+            if (i >= 0 && i < gw) {
+              IntList l = grid[j * gw + i];
+              if (l != null) {
+                for (int q = l.size() - 1; q >= 0; q--) {
+                  int id = l.get(q);
+                  if (used[id >> 1]) { l.remove(q); continue; }
+                  ArrayList<PVector> p = in.get(id >> 1);
+                  PVector v = (id & 1) == 0 ? p.get(0) : p.get(p.size() - 1);
+                  float d = sq(v.x - cx) + sq(v.y - cy);
+                  if (d < bd) { bd = d; best = id >> 1; rev = (id & 1) == 1; }
+                }
+              }
+            }
+            if (r == 0) break;
+          }
+        }
+      }
+    }
+    used[best] = true;
+    ArrayList<PVector> src = in.get(best);
+    ArrayList<PVector> p = new ArrayList<PVector>(src);
+    if (rev) Collections.reverse(p);
+    PVector s = p.get(0);
+    if (last != null && gap > 0 && dist(cx, cy, s.x, s.y) <= gap) {
+      if (dist(cx, cy, s.x, s.y) < 1e-4) p.remove(0);
+      last.addAll(p);
+    } else {
+      out.add(p);
+      last = p;
+    }
+    PVector e = last.get(last.size() - 1);
+    cx = e.x; cy = e.y;
+  }
+  return out;
+}
+
+int gridCell(float x, float y, float x0, float y0, float cs, int gw, int gh) {
+  return constrain(floor((y - y0) / cs), 0, gh - 1) * gw + constrain(floor((x - x0) / cs), 0, gw - 1);
+}
+
+// ---------- registration marks / pen test --------------------------------
+ArrayList<ArrayList<PVector>> extras(Layer L) {
+  ArrayList<ArrayList<PVector>> ex = new ArrayList<ArrayList<PVector>>();
+  if (pPenTest.on()) {
+    // one small swatch per pen, side by side, centred in the bottom margin
+    float s = 6, step = s + 3, band = genH - ymax;
+    float x0 = genW / 2 - (NUM_LAYERS * step - 3) / 2 + L.id * step;
+    float y0 = band >= s + 2 ? ymax + (band - s) / 2 : genH - s - 1;
+    ex.add(rectPath(x0, y0, x0 + s, y0 + s));
+    ArrayList<PVector> zig = new ArrayList<PVector>();
+    boolean flip = false;
+    for (float y = y0 + 0.8; y <= y0 + s - 0.79; y += 0.8) {
+      zig.add(new PVector(flip ? x0 + s - 0.8 : x0 + 0.8, y));
+      zig.add(new PVector(flip ? x0 + 0.8 : x0 + s - 0.8, y));
+      flip = !flip;
+    }
+    ex.add(zig);
+  }
+  if (pMarks.on()) {
+    // crosshair + circle near each page corner, inside the margin when there is room
+    float d = constrain(min(xmin, ymin) / 2, 4, 10), arm = 3;
+    float[][] cs = { { d, d }, { genW - d, d }, { d, genH - d }, { genW - d, genH - d } };
+    for (float[] c : cs) {
+      ArrayList<PVector> hl = new ArrayList<PVector>();
+      hl.add(new PVector(c[0] - arm, c[1])); hl.add(new PVector(c[0] + arm, c[1]));
+      ArrayList<PVector> vl = new ArrayList<PVector>();
+      vl.add(new PVector(c[0], c[1] - arm)); vl.add(new PVector(c[0], c[1] + arm));
+      ex.add(hl); ex.add(vl);
+      ex.add(circlePath(c[0], c[1], arm * 0.6, 32));
+    }
+  }
+  return ex;
+}
+
+// ---------- masks ---------------------------------------------------------
+void maskChanged() {
+  maskVersion++;
+  for (Layer L : layers) if (L.pMask.i() > 0) L.dirty = true;
+}
+
+void maskSelected(File f) { if (f != null) pendingMask = f; }
+
+void loadMaskImage(File f) {
+  String n = f.getName().toLowerCase();
+  try {
+    if (n.endsWith(".svg")) { maskSvg = loadShape(f.getAbsolutePath()); maskImg = null; }
+    else { maskImg = loadImage(f.getAbsolutePath()); maskSvg = null; }
+  } catch (Exception e) { maskImg = null; maskSvg = null; }
+  if (maskImg == null && maskSvg == null) { setStatus("Could not read " + f.getName()); maskPath = ""; }
+  else { maskPath = f.getAbsolutePath(); pMaskSrc.set(1); setStatus("Mask image: " + f.getName()); }
+  maskChanged();
+}
+
+// Rasterise the current mask at MASK_K px/mm; rebuilt only when something changed.
+void ensureMask() {
+  String key = genW + "," + genH + "," + xmin + "," + ymin + "," + xmax + "," + ymax + "," + pMaskSrc.i() + ","
+    + pMaskSize.val + "," + pMaskThr.val + "," + pMaskInv.on() + "," + maskVersion;
+  if (maskBits != null && key.equals(maskKey)) return;
+  maskKey = key;
+  maskW = max(1, ceil(genW * MASK_K)); maskH = max(1, ceil(genH * MASK_K));
+  PGraphics m = createGraphics(maskW, maskH, JAVA2D);
+  float k = MASK_K, ax = xmin * k, ay = ymin * k, aw = (xmax - xmin) * k, ah = (ymax - ymin) * k;
+  m.beginDraw();
+  m.background(255);
+  m.noStroke(); m.fill(0);
+  if (pMaskSrc.i() == 0) {
+    String t = maskText.replace('|', '\n').trim();
+    if (t.length() > 0) {
+      String[] lines = split(t, '\n');
+      float sz = pMaskSize.val * k;
+      m.textFont(maskFont);
+      m.textSize(sz);
+      float tw = 1;
+      for (String l : lines) tw = max(tw, m.textWidth(l));
+      float th = lines.length * sz * 1.05;
+      sz *= min(1, min(aw * 0.95 / tw, ah * 0.95 / th));   // shrink to fit the drawing area
+      m.textSize(sz);
+      m.textLeading(sz * 1.05);
+      m.textAlign(CENTER, CENTER);
+      m.text(t, ax + aw / 2, ay + ah / 2);
+    }
+  } else if (maskSvg != null || maskImg != null) {
+    float sw = maskSvg != null ? maskSvg.width : maskImg.width, sh = maskSvg != null ? maskSvg.height : maskImg.height;
+    float sc = min(aw / max(sw, 1), ah / max(sh, 1));
+    float dw = sw * sc, dh = sh * sc, dx = ax + (aw - dw) / 2, dy = ay + (ah - dh) / 2;
+    if (maskSvg != null) { maskSvg.disableStyle(); m.fill(0); m.noStroke(); m.shape(maskSvg, dx, dy, dw, dh); }
+    else m.image(maskImg, dx, dy, dw, dh);
+  }
+  m.endDraw();
+  m.loadPixels();
+  float thr = (pMaskSrc.i() == 0 || maskSvg != null) ? 128 : pMaskThr.val * 255;
+  boolean inv = pMaskInv.on();
+  maskBits = new boolean[maskW * maskH];
+  for (int i = 0; i < maskBits.length; i++) {
+    int c = m.pixels[i];
+    float b = (((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255)) / 3.0;
+    maskBits[i] = (b < thr) != inv;
+  }
+}
+
+boolean maskAt(float x, float y) {
+  int ix = (int) (x * MASK_K), iy = (int) (y * MASK_K);
+  if (ix < 0 || iy < 0 || ix >= maskW || iy >= maskH) return false;
+  return maskBits[iy * maskW + ix];
+}
+
+// Keep only the parts of the paths inside (or outside) the mask.
+ArrayList<ArrayList<PVector>> applyMask(ArrayList<ArrayList<PVector>> in, boolean inside) {
+  ensureMask();
+  float stepLen = 0.5 / MASK_K;
+  ArrayList<ArrayList<PVector>> res = new ArrayList<ArrayList<PVector>>();
+  for (ArrayList<PVector> p : in) {
+    PVector a = p.get(0);
+    boolean in0 = maskAt(a.x, a.y) == inside;
+    ArrayList<PVector> cur = null;
+    if (in0) { cur = new ArrayList<PVector>(); cur.add(a.copy()); }
+    for (int i = 1; i < p.size(); i++) {
+      PVector b = p.get(i);
+      a = p.get(i - 1);
+      int steps = max(1, ceil(PVector.dist(a, b) / stepLen));
+      float pxs = a.x, pys = a.y;
+      for (int s = 1; s <= steps; s++) {
+        float t = s / (float) steps, x = lerp(a.x, b.x, t), y = lerp(a.y, b.y, t);
+        boolean inn = maskAt(x, y) == inside;
+        if (inn != in0) {
+          PVector q = new PVector((x + pxs) / 2, (y + pys) / 2);
+          if (inn) { cur = new ArrayList<PVector>(); cur.add(q); }
+          else { cur.add(q); if (cur.size() >= 2) res.add(cur); cur = null; }
+          in0 = inn;
+        }
+        pxs = x; pys = y;
+      }
+      if (cur != null) cur.add(b.copy());
+    }
+    if (cur != null && cur.size() >= 2) res.add(cur);
+  }
+  return res;
 }
 
 // Clip a polyline to the margin rectangle and append the pieces to 'out'.
@@ -2168,53 +2833,425 @@ PVector polyCentroid(ArrayList<PVector> poly) {
   return new PVector(sx / (3 * A), sy / (3 * A));
 }
 
-// ---------- SVG export ----------------------------------------------------
+// ----- 26: image (photo) ------
+void photoSelected(File f) { if (f != null) pendingPhoto = f; }
+
+void loadPhoto(File f) {
+  PImage img = null;
+  try { img = loadImage(f.getAbsolutePath()); } catch (Exception e) { img = null; }
+  if (img == null || img.width <= 0) { setStatus("Could not read " + f.getName()); return; }
+  setPhoto(img);
+  photoPath = f.getAbsolutePath();
+  setStatus("Image loaded: " + f.getName());
+  photoChanged();
+}
+
+// Keep a grey-scale copy (max 1000 px) of the photo; transparent pixels count as white.
+void setPhoto(PImage img) {
+  img = img.copy();
+  if (max(img.width, img.height) > 1000) { if (img.width >= img.height) img.resize(1000, 0); else img.resize(0, 1000); }
+  img.loadPixels();
+  photo = img; photoW = img.width; photoH = img.height;
+  photoLum = new float[photoW * photoH];
+  for (int i = 0; i < photoLum.length; i++) {
+    int c = img.pixels[i];
+    float a = ((c >>> 24) & 255) / 255.0;
+    float l = (0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255)) / 255.0;
+    photoLum[i] = 1 - a * (1 - l);
+  }
+}
+
+void photoChanged() {
+  photoVersion++;
+  for (Layer L : layers) if (L.pMode.i() == 26) L.dirty = true;
+}
+
+float imgContrast = 1, imgBright = 0;
+boolean imgInvert = false;
+
+// Darkness 0 (white) .. 1 (black) of the picture at page position x, y (mm).
+float darkAt(float x, float y) {
+  float u = (x - imgX) / imgW, v = (y - imgY) / imgH;
+  if (u < 0 || v < 0 || u >= 1 || v >= 1) return 0;
+  float d;
+  if (photoLum == null) d = demoDark(u, v, imgW / imgH);
+  else d = 1 - photoLum[min(photoH - 1, (int) (v * photoH)) * photoW + min(photoW - 1, (int) (u * photoW))];
+  d = constrain((d - 0.5) * imgContrast + 0.5 - imgBright, 0, 1);
+  return imgInvert ? 1 - d : d;
+}
+
+// Built-in demo picture: a lit sphere with a soft shadow on a light floor.
+float demoDark(float u, float v, float aspect) {
+  float X = (u - 0.5) * aspect, Y = v - 0.5, R = 0.3 * min(1, aspect);
+  float sx = X / R, sy = (Y + 0.05) / R, rr = sx * sx + sy * sy;
+  if (rr < 1) {
+    float sz = sqrt(1 - rr);
+    float lit = max(0, -0.45 * sx - 0.55 * sy + 0.7 * sz);
+    return 0.92 - 0.85 * lit;
+  }
+  float sh = sq(X / (R * 1.3)) + sq((Y - R * 0.95) / (R * 0.25));
+  float d = 0.02 + 0.1 * v;
+  if (sh < 1) d += 0.55 * (1 - sh);
+  return d;
+}
+
+void genImage(ArrayList<ArrayList<PVector>> out) {
+  int style = (int) pv(0), npts = (int) pv(1), lines = (int) pv(2);
+  imgContrast = pv(3); imgBright = pv(4);
+  float ang = radians(pv(5)), amp = pv(6), freq = pv(7), dot = pv(8);
+  imgInvert = pv(9) > 0.5;
+  float aw = xmax - xmin, ah = ymax - ymin;
+  if (photoLum == null) { imgX = xmin; imgY = ymin; imgW = aw; imgH = ah; }
+  else {
+    float sc = min(aw / photoW, ah / photoH);
+    imgW = photoW * sc; imgH = photoH * sc; imgX = xmin + (aw - imgW) / 2; imgY = ymin + (ah - imgH) / 2;
+  }
+  // clip everything to the picture while generating
+  float sx0 = xmin, sy0 = ymin, sx1 = xmax, sy1 = ymax;
+  xmin = imgX; ymin = imgY; xmax = imgX + imgW; ymax = imgY + imgH;
+  try {
+    if (style <= 1) imageStipple(out, npts, style == 0, dot);
+    else if (style == 2) imageHatch(out, lines, ang);
+    else if (style == 3) imageSpiral(out, lines, amp, freq);
+    else imageSquiggle(out, lines, ang, amp, freq);
+  } finally {
+    xmin = sx0; ymin = sy0; xmax = sx1; ymax = sy1;
+  }
+}
+
+// Stratified random points, kept with a probability equal to the darkness.
+// As a TSP line they are joined into one stroke (nearest neighbour + 2-opt).
+void imageStipple(ArrayList<ArrayList<PVector>> out, int n, boolean tour, float dot) {
+  float aw = xmax - xmin, ah = ymax - ymin, mean = 0;
+  for (int i = 0; i < 2000; i++) mean += darkAt(random(xmin, xmax), random(ymin, ymax)) / 2000;
+  float cells = min(n / max(mean, 0.01), n * 100.0);
+  float c = sqrt(aw * ah / cells);
+  ArrayList<ArrayList<PVector>> pts = new ArrayList<ArrayList<PVector>>();
+  for (float y = ymin; y < ymax; y += c) {
+    for (float x = xmin; x < xmax; x += c) {
+      float px = x + random(c), py = y + random(c);
+      if (px > xmax || py > ymax || random(1) >= darkAt(px, py)) continue;
+      if (tour) { ArrayList<PVector> one = new ArrayList<PVector>(); one.add(new PVector(px, py)); pts.add(one); }
+      else out.add(circlePath(px, py, dot / 2, max(6, round(dot * 10))));
+    }
+  }
+  if (!tour || pts.size() < 2) return;
+  ArrayList<PVector> path = orderPaths(pts, true, Float.MAX_VALUE).get(0);
+  twoOpt(path, 250);
+  out.add(path);
+}
+
+// 2-opt improvement of an open tour, within a time budget.
+void twoOpt(ArrayList<PVector> p, int budgetMs) {
+  int n = p.size();
+  if (n < 4) return;
+  float[] xs = new float[n], ys = new float[n];
+  for (int i = 0; i < n; i++) { xs[i] = p.get(i).x; ys[i] = p.get(i).y; }
+  int t0 = millis();
+  boolean improved = true;
+  while (improved && millis() - t0 < budgetMs) {
+    improved = false;
+    for (int i = 0; i < n - 3; i++) {
+      if ((i & 63) == 0 && millis() - t0 >= budgetMs) break;
+      float ax = xs[i], ay = ys[i], bx = xs[i + 1], by = ys[i + 1];
+      float dab = dist(ax, ay, bx, by);
+      for (int j = i + 2; j < n - 1; j++) {
+        float cx = xs[j], cy = ys[j], dx = xs[j + 1], dy = ys[j + 1];
+        float dac = dist(ax, ay, cx, cy);
+        if (dac >= dab + dab) continue;                  // heuristic: skip far-away candidates
+        float delta = dac + dist(bx, by, dx, dy) - dab - dist(cx, cy, dx, dy);
+        if (delta < -1e-4) {
+          for (int lo = i + 1, hi = j; lo < hi; lo++, hi--) {
+            float tx = xs[lo]; xs[lo] = xs[hi]; xs[hi] = tx;
+            float ty = ys[lo]; ys[lo] = ys[hi]; ys[hi] = ty;
+          }
+          bx = xs[i + 1]; by = ys[i + 1];
+          dab = dist(ax, ay, bx, by);
+          improved = true;
+        }
+      }
+    }
+  }
+  for (int i = 0; i < n; i++) p.set(i, new PVector(xs[i], ys[i]));
+}
+
+// Up to four hatch directions; each one only where the picture is dark enough.
+void imageHatch(ArrayList<ArrayList<PVector>> out, int lines, float ang) {
+  float sp = (ymax - ymin) / lines;
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2, R = 0.5 * dist(xmin, ymin, xmax, ymax) + 1;
+  float[] thr = { 0.15, 0.38, 0.6, 0.8 };
+  float[] rot = { 0, HALF_PI, QUARTER_PI, -QUARTER_PI };
+  for (int k = 0; k < 4; k++) {
+    float a = ang + rot[k], ux = cos(a), uy = sin(a), nx = -uy, ny = ux;
+    for (float off = -R + sp / 2; off <= R; off += sp) {
+      PVector runStart = null, runEnd = null;
+      for (float t = -R; t <= R + 0.4; t += 0.4) {
+        float x = cx + ux * t + nx * off, y = cy + uy * t + ny * off;
+        boolean ok = x >= xmin && x <= xmax && y >= ymin && y <= ymax && darkAt(x, y) > thr[k];
+        if (ok) {
+          if (runStart == null) runStart = new PVector(x, y);
+          runEnd = new PVector(x, y);
+        }
+        if ((!ok || t > R) && runStart != null) {
+          if (PVector.dist(runStart, runEnd) > 0.5) { ArrayList<PVector> l = new ArrayList<PVector>(); l.add(runStart); l.add(runEnd); out.add(l); }
+          runStart = null;
+        }
+      }
+    }
+  }
+}
+
+// One Archimedean spiral; the wiggle amplitude follows the darkness.
+void imageSpiral(ArrayList<ArrayList<PVector>> out, int turns, float amp, float freq) {
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2, R = 0.5 * dist(xmin, ymin, xmax, ymax);
+  float sp = R / turns, ds = constrain(1 / (freq * 8), 0.08, 0.3);
+  ArrayList<PVector> pts = new ArrayList<PVector>();
+  float theta = 0, phase = 0;
+  while (true) {
+    float r = sp * theta / TWO_PI;
+    if (r > R) break;
+    float c = cos(theta), s = sin(theta);
+    float off = amp * sp * 0.5 * darkAt(cx + c * r, cy + s * r) * sin(phase);
+    pts.add(new PVector(cx + c * (r + off), cy + s * (r + off)));
+    theta += ds / max(r, sp * 0.5);
+    phase += ds * TWO_PI * freq;
+  }
+  emit(out, pts);
+}
+
+// Parallel lines with a sine wiggle whose amplitude follows the darkness.
+void imageSquiggle(ArrayList<ArrayList<PVector>> out, int lines, float ang, float amp, float freq) {
+  float sp = (ymax - ymin) / lines, ds = constrain(1 / (freq * 8), 0.08, 0.3);
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2, R = 0.5 * dist(xmin, ymin, xmax, ymax) + 1;
+  float ux = cos(ang), uy = sin(ang), nx = -uy, ny = ux;
+  for (float off = -R + sp / 2; off <= R; off += sp) {
+    ArrayList<PVector> pts = new ArrayList<PVector>();
+    float phase = 0;
+    for (float t = -R; t <= R; t += ds) {
+      float x = cx + ux * t + nx * off, y = cy + uy * t + ny * off;
+      float o = amp * sp * 0.5 * darkAt(x, y) * sin(phase);
+      pts.add(new PVector(x + nx * o, y + ny * o));
+      phase += ds * TWO_PI * freq;
+    }
+    emit(out, pts);
+  }
+}
+
+// ----- 27: hex Truchet ------
+// Pointy-top hexagons. Every tile connects the six edge midpoints in pairs:
+// "Arcs" = three arcs around alternate corners, "Mixed" = one straight line
+// through the centre plus two arcs. Shared edge points make the strokes
+// continue from tile to tile; chainSegments joins them into long lines.
+void genHexTruchet(ArrayList<ArrayList<PVector>> out) {
+  int n = (int) pv(0), style = (int) pv(1), lines = (int) pv(2);
+  float bias = pv(3), spread = pv(4);
+  boolean outline = pv(5) > 0.5;
+  float w = xmax - xmin, h = ymax - ymin;
+  float s = min(w, h) / (n * sqrt(3)), hw = sqrt(3) * s, vh = 1.5 * s;
+  int cols = ceil(w / hw) + 2, rows = ceil(h / vh) + 2;
+  ArrayList<float[]> segs = new ArrayList<float[]>();
+  float[] qx = new float[6], qy = new float[6];
+  for (int r = -1; r < rows; r++) {
+    for (int c = -1; c < cols; c++) {
+      float cx = xmin + c * hw + ((r & 1) == 1 ? hw / 2 : 0), cy = ymin + r * vh;
+      for (int k = 0; k < 6; k++) { float a = radians(60 * k + 30); qx[k] = cx + cos(a) * s; qy[k] = cy + sin(a) * s; }
+      boolean arcs = style == 0 || (style == 2 && random(1) < bias);
+      int rot = (int) random(6);
+      for (int li = 0; li < lines; li++) {
+        float o = (li - (lines - 1) / 2.0) * spread * s / lines;     // offset from the edge midpoint
+        if (arcs) {
+          for (int m = 0; m < 3; m++) hexArc(segs, qx, qy, (rot + 2 * m + 1) % 6, cx, cy, s / 2 + o);
+        } else {
+          int ea = rot % 6, eb = (rot + 3) % 6;
+          float ex = (qx[(ea + 1) % 6] - qx[ea]) / s, ey = (qy[(ea + 1) % 6] - qy[ea]) / s;
+          float ax = (qx[ea] + qx[(ea + 1) % 6]) / 2 + ex * o, ay = (qy[ea] + qy[(ea + 1) % 6]) / 2 + ey * o;
+          float bx = (qx[eb] + qx[(eb + 1) % 6]) / 2 + ex * o, by = (qy[eb] + qy[(eb + 1) % 6]) / 2 + ey * o;
+          segs.add(new float[] { ax, ay, bx, by });
+          hexArc(segs, qx, qy, (rot + 2) % 6, cx, cy, s / 2 + o);
+          hexArc(segs, qx, qy, (rot + 5) % 6, cx, cy, s / 2 - o);
+        }
+      }
+      if (outline) for (int k = 0; k < 6; k++) segs.add(new float[] { qx[k], qy[k], qx[(k + 1) % 6], qy[(k + 1) % 6] });
+    }
+  }
+  chainSegments(segs, out);
+}
+
+// 120-degree arc inside the hexagon around corner k, as short segments.
+void hexArc(ArrayList<float[]> segs, float[] qx, float[] qy, int k, float cx, float cy, float r) {
+  if (r <= 0.05) return;
+  float mid = atan2(cy - qy[k], cx - qx[k]);
+  int m = max(6, min(24, round(r * 2)));
+  float px = qx[k] + cos(mid - PI / 3) * r, py = qy[k] + sin(mid - PI / 3) * r;
+  for (int i = 1; i <= m; i++) {
+    float a = mid - PI / 3 + TWO_PI / 3 * i / m;
+    float x = qx[k] + cos(a) * r, y = qy[k] + sin(a) * r;
+    segs.add(new float[] { px, py, x, y });
+    px = x; py = y;
+  }
+}
+
+// ----- 28: Penrose (P3 rhombs) ------
+// Robinson triangle subdivision, starting from a wheel of ten triangles.
+// Each triangle is {type, ax, ay, bx, by, cx, cy} with apex A; two triangles
+// sharing their base B-C form one rhomb, so only A-B and A-C are drawn.
+// The arcs are centred on A and pass through the edge midpoints, so they
+// always continue into the neighbouring rhomb.
+void genPenrose(ArrayList<ArrayList<PVector>> out) {
+  int div = (int) pv(0), style = (int) pv(1);
+  float zoom = pv(2), rot = radians(pv(3));
+  float cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2, R = zoom * 0.5 * dist(xmin, ymin, xmax, ymax);
+  float phi = (1 + sqrt(5)) / 2;
+  ArrayList<float[]> tris = new ArrayList<float[]>();
+  for (int i = 0; i < 10; i++) {
+    float ab = (2 * i - 1) * PI / 10 + rot, ac = (2 * i + 1) * PI / 10 + rot;
+    float bx = cx + cos(ab) * R, by = cy + sin(ab) * R, ccx = cx + cos(ac) * R, ccy = cy + sin(ac) * R;
+    if (i % 2 == 0) tris.add(new float[] { 0, cx, cy, ccx, ccy, bx, by });
+    else tris.add(new float[] { 0, cx, cy, bx, by, ccx, ccy });
+  }
+  for (int d = 0; d < div; d++) {
+    ArrayList<float[]> next = new ArrayList<float[]>(tris.size() * 3);
+    for (float[] t : tris) {
+      if (!triNearArea(t)) continue;
+      float ax = t[1], ay = t[2], bx = t[3], by = t[4], tx = t[5], ty = t[6];
+      if (t[0] == 0) {
+        float px = ax + (bx - ax) / phi, py = ay + (by - ay) / phi;
+        next.add(new float[] { 0, tx, ty, px, py, bx, by });
+        next.add(new float[] { 1, px, py, tx, ty, ax, ay });
+      } else {
+        float qx = bx + (ax - bx) / phi, qy = by + (ay - by) / phi;
+        float rx = bx + (tx - bx) / phi, ry = by + (ty - by) / phi;
+        next.add(new float[] { 1, rx, ry, tx, ty, ax, ay });
+        next.add(new float[] { 1, qx, qy, rx, ry, bx, by });
+        next.add(new float[] { 0, rx, ry, qx, qy, ax, ay });
+      }
+    }
+    tris = next;
+  }
+  ArrayList<float[]> segs = new ArrayList<float[]>();
+  for (float[] t : tris) {
+    if (!triNearArea(t)) continue;
+    float ax = t[1], ay = t[2];
+    if (style != 1) {
+      segs.add(new float[] { t[5], t[6], ax, ay });
+      segs.add(new float[] { ax, ay, t[3], t[4] });
+    }
+    if (style != 0) {
+      float r = dist(ax, ay, t[3], t[4]) / 2;
+      float a0 = atan2(t[4] - ay, t[3] - ax), a1 = atan2(t[6] - ay, t[5] - ax);
+      float da = a1 - a0;
+      while (da > PI) da -= TWO_PI;
+      while (da < -PI) da += TWO_PI;
+      int m = max(4, min(16, round(r * abs(da) / 0.8)));
+      float px = ax + cos(a0) * r, py = ay + sin(a0) * r;
+      for (int i = 1; i <= m; i++) {
+        float a = a0 + da * i / m, x = ax + cos(a) * r, y = ay + sin(a) * r;
+        segs.add(new float[] { px, py, x, y });
+        px = x; py = y;
+      }
+    }
+  }
+  chainSegments(segs, out);
+}
+
+boolean triNearArea(float[] t) {
+  float x0 = min(t[1], min(t[3], t[5])), x1 = max(t[1], max(t[3], t[5]));
+  float y0 = min(t[2], min(t[4], t[6])), y1 = max(t[2], max(t[4], t[6]));
+  return x1 >= xmin && x0 <= xmax && y1 >= ymin && y0 <= ymax;
+}
+
+// ----- 29: hex maze ------
+// Recursive backtracker on a grid of pointy-top hexagons. Edge k of a cell
+// runs from corner k to corner k + 1; the neighbour across it is found
+// geometrically and faces back with edge k + 3.
+void genHexMaze(ArrayList<ArrayList<PVector>> out) {
+  int cellsN = (int) pv(0), style = (int) pv(1);
+  float loops = pv(2);
+  boolean doors = pv(3) > 0.5;
+  float w = xmax - xmin, h = ymax - ymin;
+  float s = min(w, h) / (cellsN * sqrt(3)), hw = sqrt(3) * s, vh = 1.5 * s;
+  int cols = max(1, floor((w - hw / 2) / hw)), rows = max(1, floor((h - 2 * s) / vh) + 1);
+  float ox = xmin + (w - (cols * hw + hw / 2)) / 2 + hw / 2, oy = ymin + (h - ((rows - 1) * vh + 2 * s)) / 2 + s;
+  int n = cols * rows;
+  float[] ccx = new float[n], ccy = new float[n];
+  for (int r = 0; r < rows; r++) for (int c = 0; c < cols; c++) {
+    ccx[r * cols + c] = ox + c * hw + ((r & 1) == 1 ? hw / 2 : 0);
+    ccy[r * cols + c] = oy + r * vh;
+  }
+  int[] nb = new int[n * 6];
+  for (int i = 0; i < n; i++) {
+    for (int k = 0; k < 6; k++) {
+      float a = radians(60 * k + 60);
+      float x = ccx[i] + cos(a) * hw, y = ccy[i] + sin(a) * hw;
+      int r = round((y - oy) / vh);
+      int c = round((x - ox - ((r & 1) == 1 ? hw / 2 : 0)) / hw);
+      nb[i * 6 + k] = (r >= 0 && r < rows && c >= 0 && c < cols) ? r * cols + c : -1;
+    }
+  }
+  boolean[] open = new boolean[n * 6], vis = new boolean[n];
+  int[] stack = new int[n], cand = new int[6];
+  int sp = 0, start = (int) random(n);
+  vis[start] = true; stack[sp++] = start;
+  while (sp > 0) {
+    int c = stack[sp - 1], nc = 0;
+    for (int k = 0; k < 6; k++) { int m = nb[c * 6 + k]; if (m >= 0 && !vis[m]) cand[nc++] = k; }
+    if (nc == 0) { sp--; continue; }
+    int k = cand[(int) random(nc)], m = nb[c * 6 + k];
+    open[c * 6 + k] = true; open[m * 6 + (k + 3) % 6] = true;
+    vis[m] = true; stack[sp++] = m;
+  }
+  if (loops > 0) {
+    for (int i = 0; i < n; i++) for (int k = 0; k < 3; k++) {
+      int m = nb[i * 6 + k];
+      if (m >= 0 && !open[i * 6 + k] && random(1) < loops * 0.3) { open[i * 6 + k] = true; open[m * 6 + k + 3] = true; }
+    }
+  }
+  int door0 = 0, door1 = n - 1;
+  if (doors) { open[door0 * 6 + 4] = true; open[door1 * 6 + 1] = true; }   // top edge of the first cell, bottom of the last
+
+  ArrayList<float[]> segs = new ArrayList<float[]>();
+  for (int i = 0; i < n; i++) {
+    for (int k = 0; k < 6; k++) {
+      float a0 = radians(60 * k + 30), a1 = radians(60 * k + 90);
+      if (style == 0) {
+        if (!open[i * 6 + k]) segs.add(new float[] { ccx[i] + cos(a0) * s, ccy[i] + sin(a0) * s, ccx[i] + cos(a1) * s, ccy[i] + sin(a1) * s });
+      } else if (open[i * 6 + k]) {
+        int m = nb[i * 6 + k];
+        if (m > i) segs.add(new float[] { ccx[i], ccy[i], ccx[m], ccy[m] });
+        else if (m < 0) {                                  // door: run out to the edge
+          float a = radians(60 * k + 60);
+          segs.add(new float[] { ccx[i], ccy[i], ccx[i] + cos(a) * hw / 2, ccy[i] + sin(a) * hw / 2 });
+        }
+      }
+    }
+  }
+  chainSegments(segs, out);
+}
+
+// ---------- export --------------------------------------------------------
 String timestamp() {
   return year() + nf(month(), 2) + nf(day(), 2) + "_" + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
 }
 
 String slug(String s) { return s.toLowerCase().replace(' ', '_'); }
 
+String ext() { return FORMAT_EXT[pFormat.i()]; }
+
 void requestExport() {
-  selectOutput("Save SVG for plotter", "svgSelected", new File(sketchPath("lineart_" + timestamp() + ".svg")));
+  selectOutput("Save " + FORMAT_NAMES[pFormat.i()] + " for plotter", "exportSelected",
+    new File(sketchPath("lineart_" + timestamp() + "." + ext())));
 }
 
-void svgSelected(File f) {
+void exportSelected(File f) {
   if (f == null) return;                       // dialog cancelled
-  if (!f.getName().toLowerCase().endsWith(".svg")) f = new File(f.getAbsolutePath() + ".svg");
+  if (!f.getName().toLowerCase().endsWith("." + ext())) f = new File(f.getAbsolutePath() + "." + ext());
   pendingExport = f;                           // handled on the animation thread
 }
 
 void quickSave() {
   File dir = new File(sketchPath("exports"));
   dir.mkdirs();
-  pendingExport = new File(dir, "lineart_" + timestamp() + ".svg");
-}
-
-// Nearest-neighbour ordering (and reversing) of paths to minimise pen-up travel.
-ArrayList<ArrayList<PVector>> optimizeOrder(ArrayList<ArrayList<PVector>> in) {
-  ArrayList<ArrayList<PVector>> rem = new ArrayList<ArrayList<PVector>>(in);
-  ArrayList<ArrayList<PVector>> out = new ArrayList<ArrayList<PVector>>(in.size());
-  float cx = 0, cy = 0;
-  while (!rem.isEmpty()) {
-    int best = 0; boolean rev = false; float bd = Float.MAX_VALUE;
-    for (int i = 0; i < rem.size(); i++) {
-      ArrayList<PVector> p = rem.get(i);
-      PVector a = p.get(0), b = p.get(p.size() - 1);
-      float da = sq(a.x - cx) + sq(a.y - cy);
-      float db = sq(b.x - cx) + sq(b.y - cy);
-      if (da < bd) { bd = da; best = i; rev = false; }
-      if (db < bd) { bd = db; best = i; rev = true; }
-    }
-    ArrayList<PVector> p = rem.get(best);
-    rem.set(best, rem.get(rem.size() - 1));
-    rem.remove(rem.size() - 1);
-    if (rev) { p = new ArrayList<PVector>(p); Collections.reverse(p); }
-    out.add(p);
-    PVector e = p.get(p.size() - 1);
-    cx = e.x; cy = e.y;
-  }
-  return out;
+  pendingExport = new File(dir, "lineart_" + timestamp() + "." + ext());
 }
 
 // Locale-independent number formatting (always '.' as decimal separator), 2 decimals.
@@ -2227,40 +3264,49 @@ void appendNum(StringBuilder sb, float v) {
   sb.append(f);
 }
 
-void writeSVG(File f) {
+// Writes the enabled layers in the chosen format; returns the number of files.
+int writeExport(File f) {
   ArrayList<Layer> act = new ArrayList<Layer>();
   for (Layer L : layers) if (L.pEnabled.on() && !L.paths.isEmpty()) act.add(L);
-  if (act.isEmpty()) { setStatus("Nothing to export: no visible lines"); return; }
+  if (act.isEmpty()) { setStatus("Nothing to export: no visible lines"); return 0; }
 
   if (pSeparate.on() && act.size() > 1) {
-    String base = f.getAbsolutePath();
-    if (base.toLowerCase().endsWith(".svg")) base = base.substring(0, base.length() - 4);
+    String base = f.getAbsolutePath(), e = "." + ext();
+    if (base.toLowerCase().endsWith(e)) base = base.substring(0, base.length() - e.length());
     for (Layer L : act) {
       ArrayList<Layer> one = new ArrayList<Layer>();
       one.add(L);
-      writeSvgFile(new File(base + "_layer" + (L.id + 1) + "_" + slug(PATTERN_NAMES[L.pMode.i()]) + ".svg"), one);
+      writeFile(new File(base + "_layer" + (L.id + 1) + "_" + slug(PATTERN_NAMES[L.pMode.i()]) + e), one);
     }
-    setStatus("Saved " + act.size() + " files (one per layer)");
-  } else {
-    writeSvgFile(f, act);
-    setStatus("Saved " + f.getName() + " (" + act.size() + (act.size() == 1 ? " layer" : " layers") + ")");
+    setStatus("Saved " + act.size() + " " + FORMAT_NAMES[pFormat.i()] + " files (one per layer)");
+    return act.size();
   }
+  writeFile(f, act);
+  setStatus("Saved " + f.getName() + " (" + act.size() + (act.size() == 1 ? " layer" : " layers") + ")");
+  return 1;
 }
 
-void writeSvgFile(File f, ArrayList<Layer> ls) {
-  boolean opt = pOptimize.on();
+void writeFile(File f, ArrayList<Layer> ls) {
+  String s;
+  if (pFormat.i() == 1) s = gcodeText(ls);
+  else if (pFormat.i() == 2) s = hpglText(ls);
+  else s = svgText(ls);
+  saveStrings(f, new String[] { s });
+  println("Saved: " + f.getAbsolutePath());
+}
+
+String svgText(ArrayList<Layer> ls) {
   StringBuilder sb = new StringBuilder(1 << 20);
   sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n");
   sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:inkscape=\"http://www.inkscape.org/namespaces/inkscape\" width=\"");
   appendNum(sb, genW); sb.append("mm\" height=\""); appendNum(sb, genH); sb.append("mm\" viewBox=\"0 0 ");
   appendNum(sb, genW); sb.append(' '); appendNum(sb, genH); sb.append("\">\n");
   for (Layer L : ls) {
-    ArrayList<ArrayList<PVector>> ps = opt ? optimizeOrder(L.paths) : L.paths;
     sb.append("<g id=\"layer").append(L.id + 1).append("\" inkscape:groupmode=\"layer\" inkscape:label=\"")
       .append(L.id + 1).append(' ').append(PATTERN_NAMES[L.pMode.i()]).append(' ').append(PEN_NAMES[L.pColor.i()])
       .append("\" fill=\"none\" stroke=\"#").append(hex(L.penColor(), 6)).append("\" stroke-width=\"");
     appendNum(sb, L.pPen.val); sb.append("\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n");
-    for (ArrayList<PVector> p : ps) {
+    for (ArrayList<PVector> p : L.paths) {
       sb.append("<path d=\"M");
       for (int i = 0; i < p.size(); i++) {
         if (i > 0) sb.append(" L");
@@ -2271,8 +3317,88 @@ void writeSvgFile(File f, ArrayList<Layer> ls) {
     sb.append("</g>\n");
   }
   sb.append("</svg>\n");
-  saveStrings(f, new String[] { sb.toString() });
-  println("SVG saved: " + f.getAbsolutePath());
+  return sb.toString();
+}
+
+// G-code for GRBL-style pen plotters: millimetres, absolute coordinates,
+// pen lift by Z axis or by servo (M3 S...), G4 dwell after each lift (seconds).
+// Several layers in one file are separated by M0 pauses for the pen change.
+String gcodeText(ArrayList<Layer> ls) {
+  StringBuilder sb = new StringBuilder(1 << 20);
+  boolean flip = pFlipY.on(), servo = pLift.i() == 1;
+  int fDown = max(1, round(pSpeedDown.val * 60)), fUp = max(1, round(pSpeedUp.val * 60));
+  String up = servo ? "M3 S" + pServoUp.i() : "G0 Z" + fmt3(pZUp.val);
+  String down = servo ? "M3 S" + pServoDown.i() : "G1 Z" + fmt3(pZDown.val) + " F" + fUp;
+  String dwell = pLiftTime.val > 0 ? "G4 P" + fmt3(pLiftTime.val) + "\n" : "";
+  sb.append("; Generative Line Art\n; paper ").append(fmt3(genW)).append(" x ").append(fmt3(genH))
+    .append(" mm, origin ").append(flip ? "bottom-left (Y up)" : "top-left (Y down)").append('\n');
+  sb.append("G21 ; millimetres\nG90 ; absolute\n").append(up).append('\n').append(dwell);
+  for (int li = 0; li < ls.size(); li++) {
+    Layer L = ls.get(li);
+    sb.append("; layer ").append(L.id + 1).append(": ").append(PATTERN_NAMES[L.pMode.i()])
+      .append(", pen ").append(PEN_NAMES[L.pColor.i()]).append('\n');
+    if (li > 0) sb.append("G1 X0 Y0 F").append(fUp).append("\nM0 ; change to the ").append(PEN_NAMES[L.pColor.i()]).append(" pen, then resume\n");
+    for (ArrayList<PVector> p : L.paths) {
+      for (int i = 0; i < p.size(); i++) {
+        PVector v = p.get(i);
+        sb.append("G1 X").append(fmt3(v.x)).append(" Y").append(fmt3(flip ? genH - v.y : v.y));
+        if (i == 0) sb.append(" F").append(fUp).append('\n').append(down).append('\n').append(dwell).append("G1 F").append(fDown);
+        sb.append('\n');
+      }
+      sb.append(up).append('\n').append(dwell);
+    }
+  }
+  sb.append("G1 X0 Y0 F").append(fUp).append("\nM2\n");
+  return sb.toString();
+}
+
+// HPGL: 40 plotter units per mm, origin bottom-left; layer n uses pen n.
+String hpglText(ArrayList<Layer> ls) {
+  StringBuilder sb = new StringBuilder(1 << 20);
+  sb.append("IN;\nVS").append(max(1, round(pSpeedDown.val / 10))).append(";\n");
+  for (Layer L : ls) {
+    sb.append("SP").append(L.id + 1).append(";\n");
+    for (ArrayList<PVector> p : L.paths) {
+      sb.append("PU").append(round(p.get(0).x * 40)).append(',').append(round((genH - p.get(0).y) * 40)).append(";\n");
+      for (int i = 1; i < p.size(); i += 64) {             // keep commands short for small plotter buffers
+        sb.append("PD");
+        for (int j = i; j < min(p.size(), i + 64); j++) {
+          if (j > i) sb.append(',');
+          sb.append(round(p.get(j).x * 40)).append(',').append(round((genH - p.get(j).y) * 40));
+        }
+        sb.append(";\n");
+      }
+    }
+    sb.append("PU;\n");
+  }
+  sb.append("PU0,0;\nSP0;\n");
+  return sb.toString();
+}
+
+String fmt3(float v) { return String.format(Locale.US, "%.3f", v); }
+
+// Exports 'Batch count' variations: every enabled layer's seed is stepped by
+// one per design (locked seeds stay), then the original seeds are restored.
+void batchExport() {
+  int n = pBatch.i();
+  File dir = new File(sketchPath("exports/batch_" + timestamp()));
+  dir.mkdirs();
+  int[] orig = new int[NUM_LAYERS];
+  for (Layer L : layers) orig[L.id] = L.pSeed.i();
+  int files = 0;
+  for (int b = 0; b < n; b++) {
+    String tag = "";
+    for (Layer L : layers) {
+      if (!L.pEnabled.on()) continue;
+      if (!L.pSeed.locked) L.pSeed.set((orig[L.id] + b) % 10000);
+      tag += "_s" + L.pSeed.i();
+    }
+    regenerate();
+    files += writeExport(new File(dir, "lineart_" + nf(b + 1, 2) + tag + "." + ext()));
+  }
+  for (Layer L : layers) L.pSeed.set(orig[L.id]);
+  regenerate();
+  setStatus("Batch: " + n + " designs (" + files + " files) in exports/" + dir.getName());
 }
 
 // ---------- presets -------------------------------------------------------
@@ -2313,6 +3439,12 @@ void savePreset(File f) {
   root.setFloat("margin", pMargin.val);
   root.setBoolean("optimizeTravel", pOptimize.on());
   root.setBoolean("filePerLayer", pSeparate.on());
+  JSONObject st = new JSONObject();                  // every page-level setting, by label
+  for (Param p : globals) st.setFloat(p.label, p.val);
+  root.setJSONObject("settings", st);
+  root.setString("maskText", maskText);
+  root.setString("maskImage", maskPath);
+  root.setString("photo", photoPath);
   JSONArray arr = new JSONArray();
   for (Layer L : layers) {
     JSONObject o = new JSONObject();
@@ -2325,6 +3457,14 @@ void savePreset(File f) {
     o.setFloat("rotate", L.pRot.val);
     o.setFloat("offsetX", L.pOffX.val);
     o.setFloat("offsetY", L.pOffY.val);
+    o.setString("mask", L.pMask.opts[L.pMask.i()]);
+    JSONArray locks = new JSONArray();
+    if (L.pSeed.locked) locks.append("seed");
+    for (int m = 0; m < PATTERN_NAMES.length; m++) {
+      ArrayList<Param> ps = L.modeParams.get(m);
+      for (int k = 0; k < ps.size(); k++) if (ps.get(k).locked) locks.append(PATTERN_NAMES[m] + "/" + k);
+    }
+    o.setJSONArray("locks", locks);
     JSONObject pp = new JSONObject();
     for (int m = 0; m < PATTERN_NAMES.length; m++) {
       JSONArray a = new JSONArray();
@@ -2354,6 +3494,16 @@ void loadPreset(File f) {
     pMargin.set(root.getFloat("margin", pMargin.val));
     pOptimize.set(root.getBoolean("optimizeTravel", true) ? 1 : 0);
     pSeparate.set(root.getBoolean("filePerLayer", false) ? 1 : 0);
+    if (root.hasKey("settings")) {
+      JSONObject st = root.getJSONObject("settings");
+      for (Param p : globals) if (st.hasKey(p.label)) p.set(st.getFloat(p.label));
+    }
+    String mt = root.getString("maskText", maskText);
+    if (!mt.equals(maskText)) { maskText = mt; maskChanged(); }
+    String mimg = root.getString("maskImage", "");
+    if (!mimg.isEmpty() && !mimg.equals(maskPath) && new File(mimg).exists()) loadMaskImage(new File(mimg));
+    String ph = root.getString("photo", "");
+    if (!ph.isEmpty() && !ph.equals(photoPath) && new File(ph).exists()) loadPhoto(new File(ph));
     JSONArray arr = root.getJSONArray("layers");
     for (int i = 0; i < NUM_LAYERS; i++) {
       Layer L = layers[i];
@@ -2370,6 +3520,14 @@ void loadPreset(File f) {
       L.pRot.set(o.getFloat("rotate", 0));
       L.pOffX.set(o.getFloat("offsetX", 0));
       L.pOffY.set(o.getFloat("offsetY", 0));
+      L.pMask.set(max(0, indexOf(L.pMask.opts, o.getString("mask", "Off"))));
+      HashSet<String> locks = new HashSet<String>();
+      if (o.hasKey("locks")) { JSONArray la = o.getJSONArray("locks"); for (int k = 0; k < la.size(); k++) locks.add(la.getString(k)); }
+      L.pSeed.locked = locks.contains("seed");
+      for (int m = 0; m < PATTERN_NAMES.length; m++) {
+        ArrayList<Param> ps = L.modeParams.get(m);
+        for (int k = 0; k < ps.size(); k++) ps.get(k).locked = locks.contains(PATTERN_NAMES[m] + "/" + k);
+      }
       if (o.hasKey("params")) {
         JSONObject pp = o.getJSONObject("params");
         for (int m = 0; m < PATTERN_NAMES.length; m++) {
