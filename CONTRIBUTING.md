@@ -17,7 +17,7 @@ Use the [issue templates](https://github.com/Murphy23x/PlotterGraph/issues/new/c
 
 - Keep it dependency-free: no extra Processing libraries.
 - Match the existing code style (2-space indentation, short comments where the intent isn't obvious).
-- **Adding a pattern:** add its name to `PATTERN_NAMES` and add its parameters and generator alongside the existing ones. Existing preset files store parameters by pattern name and by position, so don't rename existing patterns, and add new parameters at the end of a pattern's list.
+- **Adding a pattern:** add its name to the end of `PATTERN_NAMES` and add its parameters and generator alongside the existing ones (patterns that draw external data live in the `DataPatterns`, `SvgImport`, `Audio` and `TextFont` tabs). Existing preset files store parameters by pattern name and by position, so don't rename existing patterns, and add new parameters at the end of a pattern's list.
 - **Adding an example preset:** save it with the `Save preset...` button, give it a descriptive name (not `preset_<timestamp>.json`, which is git-ignored), and put it in `GenerativeLineArt/presets/`.
 
 ## License

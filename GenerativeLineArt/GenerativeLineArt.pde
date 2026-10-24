@@ -2,8 +2,9 @@
 // ------------------------------------------------------------------
 // Processing 4 (Java mode). No extra libraries needed.
 //
-// * 30 patterns (incl. image-driven), up to 4 independent pen layers (each:
-//   pattern, seed, pen colour, pen width, scale / rotate / offset, mask)
+// * 35 patterns (incl. image-, data-, map-, SVG-, audio- and text-driven), up
+//   to 4 independent pen layers (each: pattern, seed, pen colour, pen width,
+//   scale / rotate / offset, mask, field source)
 // * live preview while you drag the sliders, undo / redo
 // * export as SVG (millimetres, one Inkscape layer per pen), G-code or HPGL,
 //   with path clean-up (simplify, merge, dedupe), pen-travel optimisation,
@@ -11,6 +12,9 @@
 // * text / image masks: keep a layer only inside or outside a shape
 //   (text in any font installed on the system)
 // * presets: save / load the complete setup as a .json file
+// * external sources (Sources tab): photos, CSV / JSON data, GPX / GeoJSON
+//   routes, OpenStreetMap streets, terrain, weather, SVG, audio, text, a
+//   watched folder, AI-generated designs, and a command-line mode (Cli tab)
 //
 // Keys:  S  quick-export into the "exports" folder next to this sketch
 //        P  quick-save preset into "presets"      L  load preset...
@@ -35,7 +39,8 @@ final String[] PATTERN_NAMES = {
   "Nested polygons", "Spiral", "Moire circles", "Circle packing", "Harmonograph",
   "Hilbert curve", "Sunburst", "Maze", "L-system", "Guilloche", "Maurer rose",
   "Phyllotaxis", "Subdivision", "Warped grid", "Fractal tree", "Voronoi",
-  "Image", "Hex Truchet", "Penrose", "Hex maze"
+  "Image", "Hex Truchet", "Penrose", "Hex maze",
+  "Route", "Data lines", "SVG import", "Audio", "Text"
 };
 final String[] FORMAT_NAMES = { "SVG", "G-code", "HPGL" };
 final String[] FORMAT_EXT   = { "svg", "gcode", "hpgl" };
@@ -46,6 +51,7 @@ final String[] PEN_NAMES   = { "Black", "Red", "Blue", "Green", "Orange", "Purpl
 final int[] PEN_COLORS     = { 0xFF111111, 0xFFD62828, 0xFF1D4ED8, 0xFF15803D, 0xFFEA7A00, 0xFF7E22CE, 0xFF0E9AA7, 0xFF7C4A21 };
 final int NUM_LAYERS = 4;
 final String[] LSYS_NAMES  = { "Snowflake", "Dragon", "Gosper", "Sierpinski", "Plant" };
+final String[] FIELD_NAMES = { "Noise", "Photo", "Grid" };       // what drives the field-based patterns
 
 final int C_PANEL  = 0xFF1E1F22;
 final int C_CANVAS = 0xFF2B2D31;
@@ -65,6 +71,7 @@ Param pSimplify, pMerge, pMinLen, pDedupe;             // path clean-up
 Param pMarks, pPenTest;                                // extras
 Param pMaskSrc, pMaskSize, pMaskThr, pMaskInv;         // mask
 Param pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch;   // export
+Param pRadius, pStreets, pZoom, pWatch, pAutoExport;   // external sources (Sources tab)
 ArrayList<Param> globals = new ArrayList<Param>();     // all page-level params (saved in presets)
 ArrayList<Param> allParams = new ArrayList<Param>();   // fixed order snapshot used by undo / redo
 Layer[] layers = new Layer[NUM_LAYERS];
@@ -75,10 +82,10 @@ ArrayList<Widget> panelFlat = new ArrayList<Widget>();
 Widget activeW = null;
 Param activeParam = null;
 boolean ddOpen = false;            // pattern dropdown open?
-int panelTab = 0;                  // 0 = Design, 1 = Output
+int panelTab = 0;                  // 0 = Design, 1 = Sources, 2 = Output
 float panelScroll = 0, maxScroll = 0;
 float clipTop = 0, clipBottom = 0; // visible band of the scrolling part of the panel
-boolean textFocus = false;         // mask text field has keyboard focus
+TextVal focusText = null;          // text field that has keyboard focus (null = none)
 int lastChangeMs = -100000;        // last time any parameter changed (undo grouping)
 
 ArrayList<float[]> undoStack = new ArrayList<float[]>(), redoStack = new ArrayList<float[]>();
@@ -86,7 +93,7 @@ float[] committed;
 
 // mask (text or image), rasterised at MASK_K pixels per mm
 final float MASK_K = 4;
-String maskText = "PLOT";
+TextVal tvMask = new TextVal("PLOT", 60);
 PImage maskImg; PShape maskSvg; String maskPath = "";
 int maskVersion = 0;
 boolean[] maskBits; int maskW, maskH; String maskKey = "";
@@ -158,9 +165,17 @@ void setup() {
   for (Param p : new Param[] { pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch }) p.geometry = false;
   pLift.wide = false;
 
+  pRadius     = new Param(null, "Radius (m)", 200, 5000, 1200, true);
+  pStreets    = new Param(null, "Streets", STREET_TYPES, 0);
+  pZoom       = new Param(null, "Terrain zoom", 6, 14, 11, true);
+  pWatch      = new Param(null, "Watch", false);
+  pAutoExport = new Param(null, "Auto-export", true);
+  for (Param p : new Param[] { pRadius, pStreets, pZoom, pWatch, pAutoExport }) p.geometry = false;
+
   Collections.addAll(globals, pPaper, pLandscape, pMargin, pOptimize, pSeparate, pSpeedDown, pSpeedUp, pLiftTime,
     pSimplify, pMerge, pMinLen, pDedupe, pMarks, pPenTest, pMaskSrc, pMaskSize, pMaskThr, pMaskInv,
-    pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch);
+    pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch,
+    pRadius, pStreets, pZoom, pWatch, pAutoExport);
 
   layers[0] = new Layer(0, 0, 0, true, 1234);
   layers[1] = new Layer(1, 3, 1, false, 42);
@@ -169,12 +184,14 @@ void setup() {
 
   allParams.addAll(globals);
   for (Layer L : layers) {
-    Collections.addAll(allParams, L.pEnabled, L.pColor, L.pPen, L.pMode, L.pSeed, L.pScale, L.pRot, L.pOffX, L.pOffY, L.pMask);
+    Collections.addAll(allParams, L.pEnabled, L.pColor, L.pPen, L.pMode, L.pSeed, L.pScale, L.pRot, L.pOffX, L.pOffY, L.pMask, L.pField);
     for (ArrayList<Param> ps : L.modeParams) allParams.addAll(ps);
   }
   fontNames = PFont.list();
   if (!Arrays.asList(fontNames).contains(DEFAULT_MASK_FONT)) fontNames = splice(fontNames, DEFAULT_MASK_FONT, 0);
   setMaskFont(DEFAULT_MASK_FONT);
+  loadHersheyFonts();
+  cliSetup();
 }
 
 void draw() {
@@ -184,10 +201,14 @@ void draw() {
   if (pendingPresetLoad != null) { File f = pendingPresetLoad; pendingPresetLoad = null; loadPreset(f); }
   if (pendingPhoto != null)      { File f = pendingPhoto;      pendingPhoto = null;      loadPhoto(f); }
   if (pendingMask != null)       { File f = pendingMask;       pendingMask = null;       loadMaskImage(f); }
+  runMainQueue();
+  pollWatchFolder();
 
   updatePage();
   if (pendingBatch) { pendingBatch = false; batchExport(); }
   regenerate();
+  if (pendingAutoExport != null) { File f = pendingAutoExport; pendingAutoExport = null; writeExport(f); }
+  if (cliStep()) return;
   buildPanel();
   drawPaper();
   drawPanel();
@@ -252,6 +273,8 @@ class Param {
 class Layer {
   int id;
   Param pEnabled, pColor, pPen, pMode, pSeed, pScale, pRot, pOffX, pOffY, pMask;
+  Param pField;                      // Noise / Photo / Grid for the field-based patterns
+  TextVal text;                      // what the Text pattern writes
   ArrayList<ArrayList<Param>> modeParams = new ArrayList<ArrayList<Param>>();
   ArrayList<ArrayList<PVector>> paths = new ArrayList<ArrayList<PVector>>();   // final plot order
   boolean dirty = true;
@@ -270,6 +293,9 @@ class Layer {
     pOffX    = new Param(this, "Offset X (mm)", -150, 150, 0, false);
     pOffY    = new Param(this, "Offset Y (mm)", -150, 150, 0, false);
     pMask    = new Param(this, "Mask", new String[] { "Off", "Inside", "Outside" }, 0);
+    pField   = new Param(this, "Field", FIELD_NAMES, 0);
+    text     = new TextVal("PlotterGraph|single-line text", 200);
+    text.layer = this;
     pEnabled.geometry = false; pColor.geometry = false; pPen.geometry = false;
     for (int m = 0; m < PATTERN_NAMES.length; m++) modeParams.add(makeParams(this, m));
   }
@@ -540,19 +566,63 @@ ArrayList<Param> makeParams(Layer L, int mode) {
       l.add(P(L, "Loops",             0,   1,   0, false));
       l.add(new Param(L, "Entrance/exit", true));
       break;
+    case 30: // Route (GPX / GeoJSON / OpenStreetMap)
+      l.add(P(L, "Smooth",            0,   3,   0, true));
+      l.add(P(L, "Copies",            1,  10,   1, true));
+      l.add(P(L, "Copy offset (mm)", -3,   3, 0.6, false));
+      l.add(new Param(L, "Frame", new String[] { "None", "Rectangle", "Circle" }, 0));
+      l.add(new Param(L, "Fit", new String[] { "Show all", "Fill page" }, 0));
+      break;
+    case 31: // Data lines (CSV / JSON series)
+      l.add(new Param(L, "Style", new String[] { "Ridgeline", "Radial", "Spiral" }, 0));
+      l.add(P(L, "Row length (0=auto)", 0, 500, 0, true));
+      l.add(P(L, "Amplitude (mm)",    1,  80,  18, false));
+      l.add(P(L, "Smoothing",         0,  20,   2, true));
+      l.add(P(L, "Resolution",       20, 1000, 300, true));
+      l.add(P(L, "Inner radius",      0, 0.9, 0.2, false));
+      l.add(new Param(L, "Hide overlap", true));
+      l.add(new Param(L, "Scale per row", false));
+      break;
+    case 32: // SVG import
+      l.add(new Param(L, "Outline", true));
+      l.add(P(L, "Hatch (mm, 0=off)", 0,   6,   0, false));
+      l.add(P(L, "Hatch angle",       0, 180,  45, false));
+      l.add(new Param(L, "Cross-hatch", false));
+      break;
+    case 33: // Audio
+      l.add(new Param(L, "Style", new String[] { "Waveform", "Spiral", "Spectrum" }, 0));
+      l.add(P(L, "Lines / turns",     1, 200,  40, true));
+      l.add(P(L, "Amplitude (mm)",    1,  60,  10, false));
+      l.add(P(L, "Resolution",       50, 2000, 400, true));
+      l.add(P(L, "Bands",             8, 256,  64, true));
+      l.add(P(L, "Gain",            0.2,   5,   1, false));
+      l.add(new Param(L, "Hide overlap", true));
+      break;
+    case 34: // Text (single-line Hershey fonts)
+      l.add(new Param(L, "Font", HERSHEY_NAMES, 0));
+      l.add(P(L, "Size (mm)",         3,  80,  14, false));
+      l.add(P(L, "Line spacing",    0.8,   3, 1.6, false));
+      l.add(P(L, "Letter spacing",   -2,   5,   0, false));
+      l.add(new Param(L, "Align", new String[] { "Left", "Center", "Right" }, 1));
+      l.add(new Param(L, "Position", new String[] { "Top", "Middle", "Bottom" }, 1));
+      l.add(P(L, "Weight",            1,   4,   1, true));
+      l.add(new Param(L, "Fit to page", false));
+      break;
   }
   return l;
 }
 
 float pv(int i) { return gen.params().get(i).val; }
 
-void randomizeLayer(Layer L) {
-  if (!L.pSeed.locked) L.pSeed.set(ui.nextInt(10000));
+void randomizeLayer(Layer L) { randomizeLayer(L, ui); }
+
+void randomizeLayer(Layer L, Random r) {
+  if (!L.pSeed.locked) L.pSeed.set(r.nextInt(10000));
   for (Param p : L.params()) {
     if (p.type == 1 || p.locked) continue;
     float lo = p.min + 0.08 * (p.max - p.min);
     float hi = p.min + 0.75 * (p.max - p.min);
-    p.set(lo + ui.nextFloat() * (hi - lo));
+    p.set(lo + r.nextFloat() * (hi - lo));
   }
 }
 
@@ -637,12 +707,27 @@ void action(int id) {
     case 10: selectInput("Choose a mask image (PNG, JPG, GIF or SVG)", "maskSelected"); break;
     case 11: maskImg = null; maskSvg = null; maskPath = ""; maskChanged(); break;
     case 12: photo = null; photoLum = null; photoPath = ""; photoChanged(); break;
+    case 13: selectInput("Choose a GPX or GeoJSON file", "geoSelected"); break;
+    case 14: selectInput("Choose a CSV or JSON data file", "dataSelected"); break;
+    case 15: selectInput("Choose an SVG file", "svgSelected"); break;
+    case 16: selectInput("Choose an audio file (WAV, AIFF or AU)", "audioSelected"); break;
+    case 17: selectInput("Choose a grid: CSV matrix, ESRI .asc or grey-scale heightmap image", "gridSelected"); break;
+    case 18: fetchStreets(); break;
+    case 19: fetchTerrain(); break;
+    case 20: fetchWeather(); break;
+    case 21: findLocation(); break;
+    case 22: fetchUrl(tvUrl.s); break;
+    case 23: selectFolder("Choose a folder to watch", "watchSelected"); break;
+    case 24: seedFromText(L, tvSeedText.s); break;
+    case 25: designFromText(L, tvSeedText.s); break;
+    case 26: aiGenerate(tvPrompt.s); break;
+    case 27: clearSources(); break;
   }
 }
 
 void keyPressed() {
   if (fontOpen) { typeFontFilter(); return; }
-  if (textFocus) { typeMaskText(); return; }
+  if (focusText != null) { typeText(focusText); return; }
   Layer L = layers[curLayer];
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
   if (ctrl) {
@@ -664,17 +749,52 @@ void keyPressed() {
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
 }
 
-// Keyboard input while the mask text field has focus.
-void typeMaskText() {
-  if (key == ESC) { key = 0; textFocus = false; return; }    // don't let Esc quit the sketch
-  if (key == CODED) return;
-  if (key == ENTER || key == RETURN || key == TAB) { textFocus = false; return; }
-  if (key == BACKSPACE) {
-    if (maskText.length() > 0) { maskText = maskText.substring(0, maskText.length() - 1); maskChanged(); }
-  } else if (key >= 32 && key != DELETE && maskText.length() < 60) {
-    maskText += key;
-    maskChanged();
+// A piece of text edited in a TextFieldW (mask text, URL, prompt, ...).
+class TextVal {
+  String s; int maxLen;
+  Layer layer;                       // set for a layer's Text pattern text
+  TextVal(String s, int maxLen) { this.s = s; this.maxLen = maxLen; }
+  void set(String v) {
+    if (v.length() > maxLen) v = v.substring(0, maxLen);
+    if (!v.equals(s)) { s = v; textEdited(this); }
   }
+}
+
+void textEdited(TextVal t) {
+  if (t == tvMask) maskChanged();
+  else if (t.layer != null && t.layer.pMode.i() == 34) t.layer.dirty = true;
+}
+
+// Enter in a field runs the button next to it.
+void textSubmitted(TextVal t) {
+  if (t == tvLocation) findLocation();
+  else if (t == tvUrl) fetchUrl(t.s);
+  else if (t == tvSeedText) seedFromText(layers[curLayer], t.s);
+  else if (t == tvPrompt) aiGenerate(t.s);
+}
+
+// Keyboard input while a text field has focus. Ctrl+V (Cmd+V) pastes.
+void typeText(TextVal t) {
+  if (key == ESC) { key = 0; focusText = null; return; }    // don't let Esc quit the sketch
+  boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
+  if (ctrl) {
+    if (keyCode == 'V') { String c = clipboardText(); if (c != null) t.set(t.s + c.replaceAll("[\\r\\n\\t]+", " ")); }
+    return;
+  }
+  if (key == CODED) return;
+  if (key == ENTER || key == RETURN) { focusText = null; textSubmitted(t); return; }
+  if (key == TAB) { focusText = null; return; }
+  if (key == BACKSPACE) {
+    if (t.s.length() > 0) t.set(t.s.substring(0, t.s.length() - 1));
+  } else if (key >= 32 && key != DELETE) {
+    t.set(t.s + key);
+  }
+}
+
+String clipboardText() {
+  try {
+    return (String) java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().getData(java.awt.datatransfer.DataFlavor.stringFlavor);
+  } catch (Exception e) { return null; }
 }
 
 // Keyboard input while the font list is open: typing filters the list.
@@ -730,23 +850,25 @@ class InfoW extends Widget {
 }
 
 class TextFieldW extends Widget {
-  String label;
-  TextFieldW(String label) { this.label = label; h = 40; }
+  String label; TextVal tv;
+  TextFieldW(String label, TextVal tv) { this.label = label; this.tv = tv; h = 40; }
   void display() {
+    boolean focus = focusText == tv;
     textSize(11); fill(C_DIM); textAlign(LEFT, TOP); text(label.toUpperCase(), x, y);
-    stroke(textFocus ? C_ACCENT : C_TRACK); strokeWeight(1); fill(C_FIELD);
+    stroke(focus ? C_ACCENT : C_TRACK); strokeWeight(1); fill(C_FIELD);
     rect(x, y + 16, w, 24, 4);
     noStroke(); fill(C_TEXT); textSize(12); textAlign(LEFT, CENTER);
-    String t = maskText;
-    while (t.length() > 0 && textWidth(t) > w - 20) t = t.substring(1);
+    String t = tv.s;
+    if (focus) { while (t.length() > 0 && textWidth(t) > w - 20) t = t.substring(1); }
+    else if (textWidth(t) > w - 20) { while (t.length() > 0 && textWidth(t + "...") > w - 20) t = t.substring(0, t.length() - 1); t += "..."; }
     text(t, x + 8, y + 27);
-    if (textFocus && (millis() / 500) % 2 == 0) { stroke(C_ACCENT); line(x + 9 + textWidth(t), y + 20, x + 9 + textWidth(t), y + 35); }
+    if (focus && (millis() / 500) % 2 == 0) { stroke(C_ACCENT); line(x + 9 + textWidth(t), y + 20, x + 9 + textWidth(t), y + 35); }
   }
-  void press() { textFocus = true; }
+  void press() { focusText = tv; }
 }
 
 class TabsW extends Widget {
-  String[] labels = { "Design", "Output" };
+  String[] labels = { "Design", "Sources", "Output" };
   TabsW() { h = 26; }
   void display() {
     float bw = w / labels.length;
@@ -1083,10 +1205,28 @@ void buildDesignTab(ArrayList<Widget> top) {
   top.add(row(new SliderW(L.pPen), new SliderW(L.pSeed)));
   top.add(new ButtonRow(new String[] { "New seed", "Randomize", "Reset", "Undo", "Redo" }, new int[] { 0, 1, 2, 6, 7 }));
   top.add(new Header("PATTERN PARAMETERS  (right-click = lock)"));
-  if (L.pMode.i() == 26) {
+  int mode = L.pMode.i();
+  if (mode == 26) {
     top.add(new ButtonRow(new String[] { "Load image...", "Use demo" }, new int[] { 9, 12 }));
     top.add(new InfoW(photo == null ? "No image loaded: showing a built-in demo" : "Image: " + new File(photoPath).getName()));
   }
+  if (usesField(mode)) {
+    top.add(new ChoiceW(L.pField, FIELD_NAMES.length, null));
+    if (L.pField.i() == 1) {
+      top.add(new ButtonRow(new String[] { "Load image...", "Use demo" }, new int[] { 9, 12 }));
+      top.add(new InfoW(photo == null ? "Field = photo darkness (built-in demo for now)" : "Field = darkness of " + new File(photoPath).getName()));
+    } else if (L.pField.i() == 2) {
+      top.add(new ButtonRow(new String[] { "Load grid...", "Fetch terrain" }, new int[] { 17, 19 }));
+      top.add(new InfoW(gridVals == null ? "No grid loaded: using noise until you load one" : "Field = " + gridName));
+    }
+  }
+  if (mode >= 30 && mode <= 33) {
+    String[][] lb = { { "GPX / GeoJSON...", "Fetch streets" }, { "CSV / JSON...", "Fetch weather" }, { "Load SVG..." }, { "Load audio..." } };
+    int[][] ids = { { 13, 18 }, { 14, 20 }, { 15 }, { 16 } };
+    top.add(new ButtonRow(lb[mode - 30], ids[mode - 30]));
+    top.add(new InfoW(sourceInfo(mode)));
+  }
+  if (mode == 34) top.add(new TextFieldW("Text  ( | = new line, Ctrl+V pastes)", L.text));
   addParamWidgets(top, L.params());
 
   top.add(new Header("LAYER TRANSFORM"));
@@ -1119,7 +1259,7 @@ void buildOutputTab(ArrayList<Widget> top) {
   top.add(new Header("MASK  (switch it on per layer, Design tab)"));
   top.add(new ChoiceW(pMaskSrc, 2, pMaskInv));
   if (pMaskSrc.i() == 0) {
-    top.add(row(new TextFieldW("Text  ( | = new line)"), new SliderW(pMaskSize)));
+    top.add(row(new TextFieldW("Text  ( | = new line)", tvMask), new SliderW(pMaskSize)));
     top.add(new FontW());
   } else {
     top.add(new ButtonRow(new String[] { "Load mask image...", "Clear" }, new int[] { 10, 11 }));
@@ -1139,6 +1279,7 @@ void buildOutputTab(ArrayList<Widget> top) {
 void buildPanel() {
   ArrayList<Widget> top = new ArrayList<Widget>();
   if (panelTab == 0) buildDesignTab(top);
+  else if (panelTab == 1) buildSourcesTab(top);
   else buildOutputTab(top);
 
   ArrayList<Widget> bottom = new ArrayList<Widget>();
@@ -1149,7 +1290,7 @@ void buildPanel() {
 
   panelFlat = new ArrayList<Widget>();
   TabsW tabs = new TabsW();
-  tabs.x = PANEL_W - PAD - 150; tabs.y = 10; tabs.w = 150;
+  tabs.x = PANEL_W - PAD - 205; tabs.y = 10; tabs.w = 205;
   panelFlat.add(tabs);
 
   float bh = 0;
@@ -1192,7 +1333,7 @@ String fmtParam(Param p) {
 }
 
 void mousePressed() {
-  textFocus = false;
+  focusText = null;
   if (fontOpen) {
     boolean inList = false;
     for (Widget w : panelFlat) if (w instanceof FontW) inList |= ((FontW) w).clickItem();
@@ -1287,7 +1428,10 @@ void drawStatusBar() {
     + active + (active == 1 ? " layer  |  " : " layers  |  ") + paths + " paths  |  " + pts + " points  |  pen-down "
     + String.format(Locale.US, "%.1f m  |  travel %.1f m  |  plot time ", len / 1000.0, trav / 1000.0) + fmtTime(secs);
   text(info, PANEL_W + 14, height - 12);
-  if (millis() - statusMs < 6000) {
+  if (busyCount > 0) {
+    fill(C_HI); textAlign(RIGHT, CENTER);
+    text(busyWhat + " " + "|/-\\".charAt((millis() / 150) % 4), width - 14, height - 12);
+  } else if (millis() - statusMs < 6000) {
     fill(C_ACCENT); textAlign(RIGHT, CENTER);
     text(status, width - 14, height - 12);
   }
@@ -1307,6 +1451,7 @@ void generateLayer(Layer L) {
   gen = L;
   noiseSeed(L.pSeed.i());
   randomSeed(L.pSeed.i());
+  prepareField(usesField(L.pMode.i()) ? L.pField.i() : 0);
   ArrayList<ArrayList<PVector>> out = new ArrayList<ArrayList<PVector>>();
   switch (L.pMode.i()) {
     case 0:  genFlow(out); break;
@@ -1339,6 +1484,11 @@ void generateLayer(Layer L) {
     case 27: genHexTruchet(out); break;
     case 28: genPenrose(out); break;
     case 29: genHexMaze(out); break;
+    case 30: genRoute(out); break;
+    case 31: genDataLines(out); break;
+    case 32: genSvg(out); break;
+    case 33: genAudio(out); break;
+    case 34: genText(out); break;
   }
 
   // per-layer transform about the centre of the drawing area
@@ -1613,7 +1763,7 @@ void ensureMask() {
   m.background(255);
   m.noStroke(); m.fill(0);
   if (pMaskSrc.i() == 0) {
-    String t = maskText.replace('|', '\n').trim();
+    String t = tvMask.s.replace('|', '\n').trim();
     if (t.length() > 0) {
       String[] lines = split(t, '\n');
       float sz = pMaskSize.val * k;
@@ -1792,7 +1942,7 @@ ArrayList<PVector> flowTrace(float x, float y, float dir, int id) {
       fGrid[c] = id;
     }
     pts.add(new PVector(x, y));
-    float ang = fRot + noise(x * fNs, y * fNs) * TWO_PI * fTurb;
+    float ang = fRot + fieldNoise(x, y, x * fNs, y * fNs) * TWO_PI * fTurb;
     x += cos(ang) * fStep * dir;
     y += sin(ang) * fStep * dir;
   }
@@ -1823,7 +1973,7 @@ void genWave(ArrayList<ArrayList<PVector>> out) {
     float base = n == 1 ? (top + bot) / 2 : lerp(top, bot, j / (float) (n - 1));
     ArrayList<PVector> cur = null;
     for (int i = 0; i <= res; i++) {
-      float y = base + (noise(xs[i] * ns, j * drift) - 0.5) * 2 * amp * env[i];
+      float y = base + (fieldNoise(xs[i], base, xs[i] * ns, j * drift) - 0.5) * 2 * amp * env[i];
       boolean visible = !hide || y < sky[i];
       if (visible) {
         if (cur == null) cur = new ArrayList<PVector>();
@@ -1940,7 +2090,7 @@ void genContour(ArrayList<ArrayList<PVector>> out) {
         sx += (noise(sx + 31.7, sy + 11.3) - 0.5) * warp * 4;
         sy += (noise(sx + 77.1, sy + 53.9) - 0.5) * warp * 4;
       }
-      float v = noise(sx, sy);
+      float v = fieldNoise(x, y, sx, sy);
       if (ridged) v = 1 - abs(2 * v - 1);
       if (island > 0) {
         float dx = (x - cx) / (w * 0.5), dy = (y - cy) / (h * 0.5);
@@ -2113,7 +2263,7 @@ void genHatch(ArrayList<ArrayList<PVector>> out) {
         float x = cx + ux * t + nx * off, y = cy + uy * t + ny * off;
         boolean ok = x >= xmin && x <= xmax && y >= ymin && y <= ymax;
         if (ok) {
-          float d = noise(x * ns, y * ns);
+          float d = fieldNoise(x, y, x * ns, y * ns);
           if (vig > 0) {
             float rn = sqrt(sq((x - cx) / (w * 0.5)) + sq((y - cy) / (h * 0.5)));
             d -= vig * 0.5 * rn;
@@ -2994,7 +3144,7 @@ void setPhoto(PImage img) {
 
 void photoChanged() {
   photoVersion++;
-  for (Layer L : layers) if (L.pMode.i() == 26) L.dirty = true;
+  for (Layer L : layers) if (L.pMode.i() == 26 || (usesField(L.pMode.i()) && L.pField.i() == 1)) L.dirty = true;
 }
 
 float imgContrast = 1, imgBright = 0;
@@ -3564,7 +3714,7 @@ void presetLoadSelected(File f) {
 void savePreset(File f) {
   JSONObject root = new JSONObject();
   root.setString("app", "GenerativeLineArt");
-  root.setInt("version", 1);
+  root.setInt("version", 2);
   root.setString("paper", PAPER_NAMES[pPaper.i()]);
   root.setBoolean("landscape", pLandscape.on());
   root.setFloat("margin", pMargin.val);
@@ -3573,10 +3723,11 @@ void savePreset(File f) {
   JSONObject st = new JSONObject();                  // every page-level setting, by label
   for (Param p : globals) st.setFloat(p.label, p.val);
   root.setJSONObject("settings", st);
-  root.setString("maskText", maskText);
+  root.setString("maskText", tvMask.s);
   root.setString("maskFont", maskFontName);
   root.setString("maskImage", maskPath);
   root.setString("photo", photoPath);
+  root.setJSONObject("sources", sourcesJSON());
   JSONArray arr = new JSONArray();
   for (Layer L : layers) {
     JSONObject o = new JSONObject();
@@ -3590,6 +3741,8 @@ void savePreset(File f) {
     o.setFloat("offsetX", L.pOffX.val);
     o.setFloat("offsetY", L.pOffY.val);
     o.setString("mask", L.pMask.opts[L.pMask.i()]);
+    o.setString("field", FIELD_NAMES[L.pField.i()]);
+    o.setString("text", L.text.s);
     JSONArray locks = new JSONArray();
     if (L.pSeed.locked) locks.append("seed");
     for (int m = 0; m < PATTERN_NAMES.length; m++) {
@@ -3617,9 +3770,18 @@ int indexOf(String[] arr, String s) {
 }
 
 void loadPreset(File f) {
+  JSONObject root = null;
+  try { root = loadJSONObject(f); } catch (Exception e) { println("Preset error: " + e); }
+  if (root == null) { setStatus("Could not read preset"); return; }
+  if (applyPreset(root)) setStatus("Preset loaded: " + f.getName());
+}
+
+// Applies a preset (from a file, the command line or the AI designer). Pattern
+// parameters may be an array (by position) or an object (by label); choice
+// values may be given as the option name.
+boolean applyPreset(JSONObject root) {
   try {
-    JSONObject root = loadJSONObject(f);
-    if (root == null || !root.hasKey("layers")) { setStatus("Not a valid preset file"); return; }
+    if (root == null || !root.hasKey("layers")) { setStatus("Not a valid preset file"); return false; }
     int pi = indexOf(PAPER_NAMES, root.getString("paper", ""));
     if (pi >= 0) pPaper.set(pi);
     pLandscape.set(root.getBoolean("landscape", false) ? 1 : 0);
@@ -3630,8 +3792,7 @@ void loadPreset(File f) {
       JSONObject st = root.getJSONObject("settings");
       for (Param p : globals) if (st.hasKey(p.label)) p.set(st.getFloat(p.label));
     }
-    String mt = root.getString("maskText", maskText);
-    if (!mt.equals(maskText)) { maskText = mt; maskChanged(); }
+    tvMask.set(root.getString("maskText", tvMask.s));
     String mf = root.getString("maskFont", DEFAULT_MASK_FONT);
     if (!mf.equals(maskFontName)) {
       if (Arrays.asList(fontNames).contains(mf)) setMaskFont(mf);
@@ -3641,6 +3802,7 @@ void loadPreset(File f) {
     if (!mimg.isEmpty() && !mimg.equals(maskPath) && new File(mimg).exists()) loadMaskImage(new File(mimg));
     String ph = root.getString("photo", "");
     if (!ph.isEmpty() && !ph.equals(photoPath) && new File(ph).exists()) loadPhoto(new File(ph));
+    if (root.hasKey("sources")) applySourcesJSON(root.getJSONObject("sources"));
     JSONArray arr = root.getJSONArray("layers");
     for (int i = 0; i < NUM_LAYERS; i++) {
       Layer L = layers[i];
@@ -3658,6 +3820,8 @@ void loadPreset(File f) {
       L.pOffX.set(o.getFloat("offsetX", 0));
       L.pOffY.set(o.getFloat("offsetY", 0));
       L.pMask.set(max(0, indexOf(L.pMask.opts, o.getString("mask", "Off"))));
+      L.pField.set(max(0, indexOf(FIELD_NAMES, o.getString("field", "Noise"))));
+      if (o.hasKey("text")) L.text.set(o.getString("text", ""));
       HashSet<String> locks = new HashSet<String>();
       if (o.hasKey("locks")) { JSONArray la = o.getJSONArray("locks"); for (int k = 0; k < la.size(); k++) locks.add(la.getString(k)); }
       L.pSeed.locked = locks.contains("seed");
@@ -3669,18 +3833,33 @@ void loadPreset(File f) {
         JSONObject pp = o.getJSONObject("params");
         for (int m = 0; m < PATTERN_NAMES.length; m++) {
           if (!pp.hasKey(PATTERN_NAMES[m])) continue;
-          JSONArray a = pp.getJSONArray(PATTERN_NAMES[m]);
           ArrayList<Param> ps = L.modeParams.get(m);
-          for (int k = 0; k < ps.size() && k < a.size(); k++) ps.get(k).set(a.getFloat(k));
+          Object v = pp.get(PATTERN_NAMES[m]);
+          if (v instanceof JSONArray) {
+            JSONArray a = (JSONArray) v;
+            for (int k = 0; k < ps.size() && k < a.size(); k++) ps.get(k).set(a.getFloat(k));
+          } else if (v instanceof JSONObject) {
+            JSONObject named = (JSONObject) v;
+            for (Param p : ps) if (named.hasKey(p.label)) setFromJSON(p, named, p.label);
+          }
         }
       }
       L.dirty = true;
     }
     curLayer = 0;
     previewStale = true;
-    setStatus("Preset loaded: " + f.getName());
+    return true;
   } catch (Exception e) {
     println("Preset error: " + e);
     setStatus("Could not read preset");
+    return false;
   }
+}
+
+// A number, a boolean or (for a choice) the option's name.
+void setFromJSON(Param p, JSONObject o, String key) {
+  Object v = o.get(key);
+  if (v instanceof Number) p.set(((Number) v).floatValue());
+  else if (v instanceof Boolean) p.set((Boolean) v ? 1 : 0);
+  else if (v instanceof String && p.opts != null) { int i = indexOf(p.opts, (String) v); if (i >= 0) p.set(i); }
 }
