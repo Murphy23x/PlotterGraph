@@ -93,7 +93,8 @@ byte[] readAllBytes(InputStream in) throws Exception {
   return bo.toByteArray();
 }
 
-// GET (body == null) or POST. Follows redirects, also http -> https.
+// GET (body == null) or POST. Follows redirects (also http -> https), but never
+// https -> http, and a request with headers or a body only within the same host.
 byte[] httpRequest(String url, String body, String[] headers) throws Exception {
   for (int hop = 0; hop < 5; hop++) {
     HttpURLConnection c = (HttpURLConnection) URI.create(url).toURL().openConnection();
@@ -111,7 +112,13 @@ byte[] httpRequest(String url, String body, String[] headers) throws Exception {
     }
     int code = c.getResponseCode();
     if (code >= 300 && code < 400 && c.getHeaderField("Location") != null) {
-      url = URI.create(url).resolve(c.getHeaderField("Location")).toString();
+      URI cur = URI.create(url), next = cur.resolve(c.getHeaderField("Location"));
+      if ("https".equalsIgnoreCase(cur.getScheme()) && !"https".equalsIgnoreCase(next.getScheme()))
+        throw new Exception("refused a redirect from https to " + next.getScheme());
+      // headers (an API key) and a body are never sent on to another host
+      if ((headers != null || body != null) && !sameOrigin(cur, next))
+        throw new Exception("refused a redirect to another host (" + next.getHost() + ")");
+      url = next.toString();
       continue;
     }
     byte[] b = readAllBytes(code >= 400 ? c.getErrorStream() : c.getInputStream());
@@ -125,6 +132,13 @@ byte[] httpRequest(String url, String body, String[] headers) throws Exception {
   }
   throw new Exception("too many redirects");
 }
+
+boolean sameOrigin(URI a, URI b) {
+  return a.getScheme() != null && a.getScheme().equalsIgnoreCase(b.getScheme())
+    && a.getHost() != null && a.getHost().equalsIgnoreCase(b.getHost()) && port(a) == port(b);
+}
+
+int port(URI u) { return u.getPort() >= 0 ? u.getPort() : ("https".equalsIgnoreCase(u.getScheme()) ? 443 : 80); }
 
 String sha1(String s) {
   try {
