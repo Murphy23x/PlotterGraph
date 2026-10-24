@@ -2,7 +2,7 @@
 
 Generative line art with a live-adjustable GUI, built as a single [Processing](https://processing.org/) sketch. Designed for pen plotters: everything exports as clean, millimetre-accurate SVG.
 
-![PlotterGraph GUI with a spirograph and superformula on two pen layers](docs/screenshot.png)
+![PlotterGraph GUI: real terrain around the Jungfrau as a contour map (Field = Grid), with a single-line text caption on a second pen layer](docs/screenshot.png)
 
 ## Features
 
