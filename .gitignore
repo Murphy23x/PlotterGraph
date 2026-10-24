@@ -1,6 +1,9 @@
 # Exported plots
 GenerativeLineArt/exports/*.svg
 
+# Downloads (web addresses, streets, terrain, weather) cached by the sketch
+GenerativeLineArt/cache/
+
 # Personal quick-saved presets (P key); curated examples are committed by name
 GenerativeLineArt/presets/preset_*.json
 
