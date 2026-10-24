@@ -87,17 +87,6 @@ Everything on the **Sources** tab brings outside data into a design. When a sour
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL); credit it when you publish a plot. Terrain: [Terrarium elevation tiles](https://registry.opendata.aws/terrain-tiles/) (AWS Open Data). Weather: [Open-Meteo](https://open-meteo.com/). These services are free for light use; please don't hammer them.
 
-### Example: Microsoft 365 usage as a plot
-
-Usage reports from Microsoft Graph are CSV files, so they can be plotted directly. With the [Microsoft Graph PowerShell SDK](https://learn.microsoft.com/powershell/microsoftgraph/):
-
-```powershell
-Connect-MgGraph -Scopes Reports.Read.All
-Get-MgReportEmailActivityCount -Period D90 -OutFile email_activity.csv
-```
-
-Drop `email_activity.csv` into the watched folder (or load it with *CSV / JSON...*): Send, Receive and Read become three data lines, oldest day first.
-
 ## Command line
 
 The sketch can run without the GUI, for scripts, scheduled tasks or flows. Arguments go after `--run` (or straight to an exported application):
