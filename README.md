@@ -45,17 +45,25 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 
 ## Controls
 
+- **Command palette** (`Ctrl+K` / `Cmd+K` or `/`): search everything the app can do — patterns, actions, paper, pens, layers, tabs, sources and the presets in `presets/` — and run it with `Enter`. Each command shows its shortcut, so it doubles as the shortcut list.
 - **Design / Sources / Output tabs** at the top of the panel: *Design* holds the paper, layers and pattern parameters; *Sources* loads external data (see below); *Output* holds the plotter speeds and time estimate, path clean-up, registration marks / pen test, mask source, export format and batch export.
-- **Sliders / dials** in the left panel adjust the current layer's parameters live. Mouse wheel over a slider = fine adjustment; elsewhere in the panel it scrolls.
+- **Sliders / dials** in the left panel adjust the current layer's parameters live. Mouse wheel over a slider = fine adjustment; elsewhere in the panel it scrolls. **Double-click** a slider (or click its value) to type an exact value: `Enter` applies, `Esc` cancels, `Tab` moves to the next slider, Up/Down nudge; `*2`, `/2`, `+10` and `--10` change the current value, and a decimal comma works too.
 - **Right-click** a pattern parameter or the seed to lock / unlock it (a padlock appears next to its name).
+- **Preview zoom**: mouse wheel over the page zooms around the cursor (up to 4000 %), drag to pan, double-click or `0` fits the page again (`+` / `-` zoom too). Zoomed in, lines are drawn at their real pen width, with a scale bar, so you can check overlaps and fine detail before plotting.
+- **Paper colour** (Design tab): preview on white, cream, kraft, grey, black or navy paper; pens include white, gold and silver for dark paper. It changes the preview, the PNG image and the simulation, never the plot files. A pen that barely shows on the paper is struck through in the swatches and named above the page.
 - **Layer tabs** (1–4) switch which pen layer you're editing.
 - **Pattern dropdown** picks the pattern for the current layer; Left/Right arrow keys cycle through patterns.
 - **New seed / Randomize / Reset** buttons (or `N`/`Space`, `R`) regenerate the current layer.
+- **Your work is kept**: the design is saved to `GenerativeLineArt/session.json` a moment after each change and restored at the next start (tab and layer included). `Ctrl+N` starts a fresh design; `Ctrl+Z` takes that back.
+- **Explore variations** (button or `E`): a 3 × 3 grid of alternatives for the current layer, drawn with the other layers. Click one (or press `1`–`9`) to keep it; `Space` = new batch, `Tab` switches between *seeds only* and *also vary parameters* (locked values stay), `Esc` closes. The first cell is the current design, for comparison.
+- **Simulate plot** (Output tab or `G`): plays the plot back in the order and at the speed the plotter will draw it (pen-down and travel speed, pen lifts), layer after layer, with travel moves and the pen position. The whole plot takes about 30 s; `Space` pauses, `+` / `-` change the speed, click the time bar to jump, `G` / `Esc` stops.
 - **Undo / Redo** buttons, or `Ctrl+Z` and `Ctrl+Y` / `Ctrl+Shift+Z` (`Cmd` on macOS).
 - **Mask** (Design tab, per layer): Off / Inside / Outside. Pick the text or image on the Output tab.
 - **Font** (Output tab, text mask): click to open a list of every installed font. Type to filter it (e.g. `bold`), scroll with the mouse wheel or Up/Down, then click a font or press Enter. The font is saved in presets; if a preset's font isn't installed, the current font stays.
 - **Export ...** (or `S`) opens a save dialog in the chosen format; a quick-save also writes into `GenerativeLineArt/exports/`.
+- **Save PNG image** (Output tab or `I`): a proof card of the design — the plot on paper at the real pen widths, with a caption (patterns, paper, pens, length of line, plot time) — to show a client or post online.
 - **Save preset... / Load preset...** (or `P`, `L`) store/restore the whole setup as JSON in `GenerativeLineArt/presets/`.
+- **Drag and drop** files onto the window to load them (any type from *External sources*; several at once is fine, a preset is applied). Drop a folder to watch it, or a link from your browser to download it.
 - **Text fields** (mask text, URL, place, prompt): click to type, `Ctrl+V` / `Cmd+V` pastes, `Enter` runs the button next to the field.
 
 ## External sources
@@ -95,11 +103,13 @@ The sketch can run without the GUI, for scripts, scheduled tasks or flows. Argum
 Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.json --out exports/waves.svg
 Processing cli --sketch=GenerativeLineArt --run --input route.gpx --text "Sunday ride" --layer 2 --format gcode --out ride.gcode
 Processing cli --sketch=GenerativeLineArt --run --location "Utrecht" --streets major --radius 2000 --out utrecht.svg
+Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.json --out preview.png   # proof card image
+Processing cli --sketch=GenerativeLineArt --run --set "Pattern=Wave lines" --set "Lines=90" --set "Paper colour=Black" --set "Pen colour=White" --out waves.png
 Processing cli --sketch=GenerativeLineArt --run --design-text "Anna & Tom" --batch 10
 Processing cli --sketch=GenerativeLineArt --run --watch C:\Plots\Inbox
 ```
 
-Options: `--preset`, `--input <file|url>` (repeatable), `--grid`, `--layer`, `--location`, `--streets [all|major|water|buildings]`, `--radius`, `--terrain [zoom]`, `--weather`, `--text`, `--seed`, `--seed-text`, `--design-text`, `--prompt`, `--paper`, `--landscape` / `--portrait`, `--format svg|gcode|hpgl`, `--out`, `--batch <n>`, `--watch <folder>`, `--help`. Relative paths are relative to the current directory. Without `--watch` the window stays hidden and the sketch quits after exporting, with exit code 1 when something failed. On a Linux server without a display, run it under `xvfb-run`.
+Options: `--set "<name>=<value>"` (any parameter or setting by name; choices by option name), `--list [json]` (every pattern, parameter and setting with its range), `--preset`, `--input <file|url>` (repeatable), `--grid`, `--layer`, `--location`, `--streets [all|major|water|buildings]`, `--radius`, `--terrain [zoom]`, `--weather`, `--text`, `--seed`, `--seed-text`, `--design-text`, `--prompt`, `--paper`, `--landscape` / `--portrait`, `--format svg|gcode|hpgl`, `--out`, `--batch <n>`, `--watch <folder>`, `--help`. Relative paths are relative to the current directory. Without `--watch` the window stays hidden and the sketch quits after exporting, with exit code 1 when something failed. On a Linux server without a display, run it under `xvfb-run`.
 
 ## Plotting
 
