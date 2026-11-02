@@ -46,7 +46,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 ## Controls
 
 - **Design / Sources / Output tabs** at the top of the panel: *Design* holds the paper, layers and pattern parameters; *Sources* loads external data (see below); *Output* holds the plotter speeds and time estimate, path clean-up, registration marks / pen test, mask source, export format and batch export.
-- **Sliders / dials** in the left panel adjust the current layer's parameters live. Mouse wheel over a slider = fine adjustment; elsewhere in the panel it scrolls.
+- **Sliders / dials** in the left panel adjust the current layer's parameters live. Mouse wheel over a slider = fine adjustment; elsewhere in the panel it scrolls. **Double-click** a slider (or click its value) to type an exact value: `Enter` applies, `Esc` cancels, `Tab` moves to the next slider, Up/Down nudge; `*2`, `/2`, `+10` and `--10` change the current value, and a decimal comma works too.
 - **Right-click** a pattern parameter or the seed to lock / unlock it (a padlock appears next to its name).
 - **Layer tabs** (1–4) switch which pen layer you're editing.
 - **Pattern dropdown** picks the pattern for the current layer; Left/Right arrow keys cycle through patterns.

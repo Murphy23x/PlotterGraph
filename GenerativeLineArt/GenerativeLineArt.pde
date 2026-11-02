@@ -778,6 +778,7 @@ void textSubmitted(TextVal t) {
 // Keyboard input while a text field has focus. Ctrl+V (Cmd+V) pastes.
 void typeText(TextVal t) {
   if (key == ESC) { key = 0; focusText = null; return; }    // don't let Esc quit the sketch
+  if (t == tvNum && numKey()) return;
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
   if (ctrl) {
     if (keyCode == 'V') { String c = clipboardText(); if (c != null) t.set(t.s + c.replaceAll("[\\r\\n\\t]+", " ")); }
@@ -903,7 +904,8 @@ class SliderW extends Widget {
     textSize(12);
     fill(C_TEXT); textAlign(LEFT, TOP); text(p.label, x, y);
     if (p.locked) drawLock(x + textWidth(p.label) + 6, y + 1);
-    fill(C_ACCENT); textAlign(RIGHT, TOP); text(fmtParam(p), x + w, y);
+    if (focusText == tvNum && numParam == p) drawNumField(this);
+    else { fill(C_ACCENT); textAlign(RIGHT, TOP); text(fmtParam(p), x + w, y); }
     float ty = y + 25, x0 = x + 6, x1 = x + w - 6;
     strokeCap(ROUND); stroke(C_TRACK); strokeWeight(3); line(x0, ty, x1, ty);
     float k = map(p.val, p.min, p.max, x0, x1);
@@ -911,8 +913,9 @@ class SliderW extends Widget {
     noStroke(); fill((activeParam == p || (activeParam == null && hit())) ? C_HI : C_ACCENT);
     ellipse(k, ty, 13, 13);
   }
-  void press() { drag(); }
+  void press() { if (sliderPress(this)) { activeW = null; activeParam = null; return; } drag(); }
   void drag() {
+    if (activeW != this) return;
     float x0 = x + 6, x1 = x + w - 6;
     p.set(map(constrain(mouseX, x0, x1), x0, x1, p.min, p.max));
   }
@@ -1206,7 +1209,7 @@ void buildDesignTab(ArrayList<Widget> top) {
   top.add(new DropdownW(L.pMode));
   top.add(row(new SliderW(L.pPen), new SliderW(L.pSeed)));
   top.add(new ButtonRow(new String[] { "New seed", "Randomize", "Reset", "Undo", "Redo" }, new int[] { 0, 1, 2, 6, 7 }));
-  top.add(new Header("PATTERN PARAMETERS  (right-click = lock)"));
+  top.add(new Header("PATTERN PARAMETERS  (double-click = type, right-click = lock)"));
   int mode = L.pMode.i();
   if (mode == 26) {
     top.add(new ButtonRow(new String[] { "Load image...", "Use demo" }, new int[] { 9, 12 }));
@@ -1335,6 +1338,7 @@ String fmtParam(Param p) {
 }
 
 void mousePressed() {
+  if (focusText == tvNum) applyNum();       // clicking elsewhere keeps the typed value
   focusText = null;
   if (fontOpen) {
     boolean inList = false;
