@@ -749,6 +749,9 @@ void keyPressed() {
   else if (key == 'n' || key == 'N' || key == ' ') newSeed(L);
   else if (key == 'r' || key == 'R') randomizeLayer(L);
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
+  else if (key == '0') resetView();
+  else if (key == '+' || key == '=') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1.5);
+  else if (key == '-') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1 / 1.5);
 }
 
 // A piece of text edited in a TextFieldW (mask text, URL, prompt, ...).
@@ -1351,7 +1354,11 @@ void mousePressed() {
     ddOpen = false;
     return;
   }
-  if (mouseX > PANEL_W) return;
+  if (mouseX > PANEL_W) {
+    if (inPreview() && mouseEvent != null && mouseEvent.getCount() == 2) resetView();
+    else if (inPreview()) { panning = true; panLastX = mouseX; panLastY = mouseY; }
+    return;
+  }
   if (mouseButton == RIGHT) {                       // toggle a parameter lock
     for (Widget w : panelFlat) {
       if (w.hit() && lockable(w.p)) {
@@ -1366,8 +1373,11 @@ void mousePressed() {
     if (w.hit()) { activeW = w; activeParam = (w instanceof SliderW) ? w.p : null; w.press(); break; }
   }
 }
-void mouseDragged() { if (activeW != null) activeW.drag(); }
-void mouseReleased() { activeW = null; activeParam = null; }
+void mouseDragged() {
+  if (panning) { panBy(mouseX - panLastX, mouseY - panLastY); panLastX = mouseX; panLastY = mouseY; return; }
+  if (activeW != null) activeW.drag();
+}
+void mouseReleased() { activeW = null; activeParam = null; panning = false; }
 
 void mouseWheel(MouseEvent event) {
   if (fontOpen) { fontScroll += event.getCount() * 3; return; }
@@ -1380,25 +1390,26 @@ void mouseWheel(MouseEvent event) {
       return;
     }
   }
+  if (inPreview()) { zoomAt(mouseX, mouseY, pow(1.25, -event.getCount())); return; }
   if (mouseX < PANEL_W) panelScroll = constrain(panelScroll + event.getCount() * 40, 0, maxScroll);
 }
 
 // ---------- preview -------------------------------------------------------
 void drawPaper() {
-  float availW = width - PANEL_W - 80;
-  float availH = height - 80 - 24;
-  float sc = max(0.1, min(availW / genW, availH / genH));
-  int pw = max(1, round(genW * sc)), ph = max(1, round(genH * sc));
-  float ox = PANEL_W + (width - PANEL_W - pw) / 2.0;
-  float oy = (height - 24 - ph) / 2.0;
-
-  noStroke(); fill(0, 90); rect(ox + 5, oy + 6, pw, ph);
-  if (pg == null || pg.width != pw || pg.height != ph || previewStale) renderPreview(pw, ph);
-  image(pg, ox, oy);
-
-  float k = pw / genW;
+  float k = viewK(), ox = viewOx(), oy = viewOy();
+  if (viewZoom > 1) drawZoomed(ox, oy, k);
+  else {
+    int pw = max(1, round(genW * k)), ph = max(1, round(genH * k));
+    ox = PANEL_W + (areaW() - pw) / 2.0;
+    oy = (areaH() - ph) / 2.0;
+    k = pw / genW;
+    noStroke(); fill(0, 90); rect(ox + 5, oy + 6, pw, ph);
+    if (pg == null || pg.width != pw || pg.height != ph || previewStale) renderPreview(pw, ph);
+    image(pg, ox, oy);
+  }
   noFill(); stroke(80, 160, 255, 110); strokeWeight(1);
   rect(ox + xmin * k, oy + ymin * k, (xmax - xmin) * k, (ymax - ymin) * k);
+  drawZoomInfo(k);
 }
 
 void renderPreview(int pw, int ph) {
