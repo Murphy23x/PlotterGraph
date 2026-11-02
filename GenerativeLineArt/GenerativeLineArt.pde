@@ -192,6 +192,7 @@ void setup() {
   setMaskFont(DEFAULT_MASK_FONT);
   loadHersheyFonts();
   cliSetup();
+  if (!cliOneShot) setupDragDrop();
 }
 
 void draw() {
@@ -213,6 +214,7 @@ void draw() {
   drawPaper();
   drawPanel();
   drawStatusBar();
+  drawDropOverlay();
   trackUndo();
 }
 

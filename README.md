@@ -56,6 +56,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 - **Font** (Output tab, text mask): click to open a list of every installed font. Type to filter it (e.g. `bold`), scroll with the mouse wheel or Up/Down, then click a font or press Enter. The font is saved in presets; if a preset's font isn't installed, the current font stays.
 - **Export ...** (or `S`) opens a save dialog in the chosen format; a quick-save also writes into `GenerativeLineArt/exports/`.
 - **Save preset... / Load preset...** (or `P`, `L`) store/restore the whole setup as JSON in `GenerativeLineArt/presets/`.
+- **Drag and drop** files onto the window to load them (any type from *External sources*; several at once is fine, a preset is applied). Drop a folder to watch it, or a link from your browser to download it.
 - **Text fields** (mask text, URL, place, prompt): click to type, `Ctrl+V` / `Cmd+V` pastes, `Enter` runs the button next to the field.
 
 ## External sources
