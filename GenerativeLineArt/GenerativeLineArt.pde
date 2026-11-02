@@ -213,7 +213,9 @@ void draw() {
   if (pendingAutoExport != null) { File f = pendingAutoExport; pendingAutoExport = null; writeExport(f); }
   if (cliStep()) return;
   buildPanel();
-  if (exploreOn) { exploreStep(); drawExplore(); } else drawPaper();
+  if (simOn) drawSimulation();
+  else if (exploreOn) { exploreStep(); drawExplore(); }
+  else drawPaper();
   drawPanel();
   drawStatusBar();
   drawDropOverlay();
@@ -728,6 +730,7 @@ void action(int id) {
     case 26: aiGenerate(tvPrompt.s); break;
     case 27: clearSources(); break;
     case 28: toggleExplore(); break;
+    case 29: toggleSimulation(); break;
   }
 }
 
@@ -735,6 +738,7 @@ void keyPressed() {
   if (fontOpen) { typeFontFilter(); return; }
   if (focusText != null) { typeText(focusText); return; }
   if (exploreKey()) return;
+  if (simKey()) return;
   Layer L = layers[curLayer];
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
   if (ctrl) {
@@ -756,6 +760,7 @@ void keyPressed() {
   else if (key == 'r' || key == 'R') randomizeLayer(L);
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
   else if (key == 'e' || key == 'E') toggleExplore();
+  else if (key == 'g' || key == 'G') toggleSimulation();
   else if (key == '0') resetView();
   else if (key == '+' || key == '=') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1.5);
   else if (key == '-') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1 / 1.5);
@@ -1263,6 +1268,7 @@ void buildOutputTab(ArrayList<Widget> top) {
       .append(String.format(Locale.US, "%.1f m down, %.1f m travel, %d lifts", L.length / 1000, L.travel / 1000, L.nPaths));
   }
   top.add(new InfoW(est.length() == 0 ? "No layers enabled" : est.toString()));
+  top.add(new ButtonRow(new String[] { simOn ? "Stop simulation (G)" : "Simulate plot (G)" }, new int[] { 29 }));
 
   top.add(new Header("PATH CLEAN-UP"));
   top.add(row(new SliderW(pSimplify), new SliderW(pMerge)));
@@ -1336,7 +1342,7 @@ void drawPanel() {
   for (Widget w : panelFlat) if (!w.scrolls) w.display();
 
   fill(C_DIM); textSize(11); textAlign(LEFT, BOTTOM); textLeading(14);
-  text("S export | P save preset | L load | N seed | R randomize | E variations\nCtrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
+  text("S export | P save preset | L load | N seed | R randomize | E variations\nG simulate | Ctrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
 
   for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).overlay();
   for (Widget w : panelFlat) if (w instanceof FontW) ((FontW) w).overlay();
@@ -1363,6 +1369,7 @@ void mousePressed() {
     return;
   }
   if (explorePress()) return;
+  if (simPress()) return;
   if (mouseX > PANEL_W) {
     if (inPreview() && mouseEvent != null && mouseEvent.getCount() == 2) resetView();
     else if (inPreview()) { panning = true; panLastX = mouseX; panLastY = mouseY; }
@@ -1399,7 +1406,7 @@ void mouseWheel(MouseEvent event) {
       return;
     }
   }
-  if (exploreOn && inPreview()) return;
+  if ((exploreOn || simOn) && inPreview()) return;
   if (inPreview()) { zoomAt(mouseX, mouseY, pow(1.25, -event.getCount())); return; }
   if (mouseX < PANEL_W) panelScroll = constrain(panelScroll + event.getCount() * 40, 0, maxScroll);
 }
