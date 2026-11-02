@@ -20,3 +20,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Last design, restored at start-up
+GenerativeLineArt/session.json

@@ -52,6 +52,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 - **Layer tabs** (1–4) switch which pen layer you're editing.
 - **Pattern dropdown** picks the pattern for the current layer; Left/Right arrow keys cycle through patterns.
 - **New seed / Randomize / Reset** buttons (or `N`/`Space`, `R`) regenerate the current layer.
+- **Your work is kept**: the design is saved to `GenerativeLineArt/session.json` a moment after each change and restored at the next start (tab and layer included). `Ctrl+N` starts a fresh design; `Ctrl+Z` takes that back.
 - **Undo / Redo** buttons, or `Ctrl+Z` and `Ctrl+Y` / `Ctrl+Shift+Z` (`Cmd` on macOS).
 - **Mask** (Design tab, per layer): Off / Inside / Outside. Pick the text or image on the Output tab.
 - **Font** (Output tab, text mask): click to open a list of every installed font. Type to filter it (e.g. `bold`), scroll with the mouse wheel or Up/Down, then click a font or press Enter. The font is saved in presets; if a preset's font isn't installed, the current font stays.

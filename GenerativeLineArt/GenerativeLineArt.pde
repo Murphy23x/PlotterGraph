@@ -193,6 +193,7 @@ void setup() {
   loadHersheyFonts();
   cliSetup();
   if (!cliOneShot) setupDragDrop();
+  if (!cliMode) restoreSession();
 }
 
 void draw() {
@@ -216,6 +217,7 @@ void draw() {
   drawStatusBar();
   drawDropOverlay();
   trackUndo();
+  autosaveSession();
 }
 
 void regenerate() {
@@ -736,6 +738,7 @@ void keyPressed() {
     boolean shift = keyEvent.isShiftDown();
     if (keyCode == 'Z') { if (shift) redo(); else undo(); }
     else if (keyCode == 'Y') redo();
+    else if (keyCode == 'N') startFresh();
     return;
   }
   if (key == CODED) {
@@ -1449,8 +1452,11 @@ void drawStatusBar() {
     fill(C_HI); textAlign(RIGHT, CENTER);
     text(busyWhat + " " + "|/-\\".charAt((millis() / 150) % 4), width - 14, height - 12);
   } else if (millis() - statusMs < 6000) {
+    String t = status;                                // never wider than half the bar
+    while (t.length() > 4 && textWidth(t) > (width - PANEL_W) * 0.55) t = t.substring(0, t.length() - 4) + "...";
+    noStroke(); fill(C_PANEL); rect(width - 30 - textWidth(t), height - 24, textWidth(t) + 30, 24);
     fill(C_ACCENT); textAlign(RIGHT, CENTER);
-    text(status, width - 14, height - 12);
+    text(t, width - 14, height - 12);
   }
 }
 
@@ -3729,6 +3735,12 @@ void presetLoadSelected(File f) {
 }
 
 void savePreset(File f) {
+  if (presetJSON().save(f, "indent=2")) setStatus("Preset saved: " + f.getName());
+  else setStatus("Could not save preset");
+}
+
+// The whole design as a preset (version 2).
+JSONObject presetJSON() {
   JSONObject root = new JSONObject();
   root.setString("app", "GenerativeLineArt");
   root.setInt("version", 2);
@@ -3777,8 +3789,7 @@ void savePreset(File f) {
     arr.append(o);
   }
   root.setJSONArray("layers", arr);
-  if (root.save(f, "indent=2")) setStatus("Preset saved: " + f.getName());
-  else setStatus("Could not save preset");
+  return root;
 }
 
 int indexOf(String[] arr, String s) {
