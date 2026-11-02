@@ -27,7 +27,7 @@ final String CLI_HELP = String.join("\n",
   "  --seed <n>               seed of the layer;  --seed-text <s>  seed from text;  --design-text <s>  design from text",
   "  --prompt <description>   AI design (needs ANTHROPIC_API_KEY)",
   "  --paper A5|A4|A3|Square  --landscape  --portrait",
-  "  --format svg|gcode|hpgl  --out <file>  (default exports/lineart_<time>.<ext>)",
+  "  --format svg|gcode|hpgl  --out <file>  (default exports/lineart_<time>.<ext>; a .png file is a picture of the design)",
   "  --batch <n>              export n seed variations into exports/batch_<time>/",
   "  --watch <folder>         keep running: load and export every new file dropped into the folder",
   "  --help");
@@ -158,6 +158,12 @@ boolean cliStep() {
   } else {
     File out = cliOut != null ? cliFile(cliOut) : new File(sketchPath("exports"), "lineart_" + timestamp() + "." + ext());
     if (out.getParentFile() != null) out.getParentFile().mkdirs();
+    if (extOf(out.getName()).equals("png")) {                // a picture of the design instead of plot data
+      if (!writeShareImage(out)) { System.err.println("Error: " + status); cliExitCode = 1; }
+      else println("Saved: " + out.getAbsolutePath());
+      exit();
+      return true;
+    }
     if (writeExport(out) == 0) { System.err.println("Error: " + status); cliExitCode = 1; exit(); return true; }
   }
   println(status);

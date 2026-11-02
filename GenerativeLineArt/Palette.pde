@@ -30,6 +30,7 @@ ArrayList<Cmd> buildCommands() {
   ArrayList<Cmd> c = new ArrayList<Cmd>();
   final Layer L = layers[curLayer];
   c.add(cmd("Export " + FORMAT_NAMES[pFormat.i()] + "...", "S", act(3)));
+  c.add(cmd("Save PNG image (proof card)...", "I", act(30)));
   c.add(cmd("Simulate plot", "G", new Runnable() { public void run() { toggleSimulation(); } }));
   c.add(cmd("Explore variations", "E", new Runnable() { public void run() { toggleExplore(); } }));
   c.add(cmd("New seed", "N / Space", act(0)));

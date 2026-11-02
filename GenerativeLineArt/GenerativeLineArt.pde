@@ -203,6 +203,7 @@ void draw() {
   if (pendingPresetLoad != null) { File f = pendingPresetLoad; pendingPresetLoad = null; loadPreset(f); }
   if (pendingPhoto != null)      { File f = pendingPhoto;      pendingPhoto = null;      loadPhoto(f); }
   if (pendingMask != null)       { File f = pendingMask;       pendingMask = null;       loadMaskImage(f); }
+  if (pendingShare != null)      { File f = pendingShare;      pendingShare = null;      writeShareImage(f); }
   runMainQueue();
   pollWatchFolder();
 
@@ -732,6 +733,7 @@ void action(int id) {
     case 27: clearSources(); break;
     case 28: toggleExplore(); break;
     case 29: toggleSimulation(); break;
+    case 30: requestShareImage(); break;
   }
 }
 
@@ -765,6 +767,7 @@ void keyPressed() {
   else if (key == '/' || key == '?') openPalette();
   else if (key == 'e' || key == 'E') toggleExplore();
   else if (key == 'g' || key == 'G') toggleSimulation();
+  else if (key == 'i' || key == 'I') requestShareImage();
   else if (key == '0') resetView();
   else if (key == '+' || key == '=') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1.5);
   else if (key == '-') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1 / 1.5);
@@ -1300,6 +1303,7 @@ void buildOutputTab(ArrayList<Widget> top) {
     else top.add(row(new SliderW(pServoUp), new SliderW(pServoDown)));
   }
   top.add(row(new SliderW(pBatch), new ButtonRow(new String[] { "Batch export" }, new int[] { 8 })));
+  top.add(new ButtonRow(new String[] { "Save PNG image (proof card)... (I)" }, new int[] { 30 }));
 }
 
 void buildPanel() {

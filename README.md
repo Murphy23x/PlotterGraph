@@ -60,6 +60,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 - **Mask** (Design tab, per layer): Off / Inside / Outside. Pick the text or image on the Output tab.
 - **Font** (Output tab, text mask): click to open a list of every installed font. Type to filter it (e.g. `bold`), scroll with the mouse wheel or Up/Down, then click a font or press Enter. The font is saved in presets; if a preset's font isn't installed, the current font stays.
 - **Export ...** (or `S`) opens a save dialog in the chosen format; a quick-save also writes into `GenerativeLineArt/exports/`.
+- **Save PNG image** (Output tab or `I`): a proof card of the design — the plot on paper at the real pen widths, with a caption (patterns, paper, pens, length of line, plot time) — to show a client or post online.
 - **Save preset... / Load preset...** (or `P`, `L`) store/restore the whole setup as JSON in `GenerativeLineArt/presets/`.
 - **Drag and drop** files onto the window to load them (any type from *External sources*; several at once is fine, a preset is applied). Drop a folder to watch it, or a link from your browser to download it.
 - **Text fields** (mask text, URL, place, prompt): click to type, `Ctrl+V` / `Cmd+V` pastes, `Enter` runs the button next to the field.
@@ -101,6 +102,7 @@ The sketch can run without the GUI, for scripts, scheduled tasks or flows. Argum
 Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.json --out exports/waves.svg
 Processing cli --sketch=GenerativeLineArt --run --input route.gpx --text "Sunday ride" --layer 2 --format gcode --out ride.gcode
 Processing cli --sketch=GenerativeLineArt --run --location "Utrecht" --streets major --radius 2000 --out utrecht.svg
+Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.json --out preview.png   # proof card image
 Processing cli --sketch=GenerativeLineArt --run --design-text "Anna & Tom" --batch 10
 Processing cli --sketch=GenerativeLineArt --run --watch C:\Plots\Inbox
 ```
