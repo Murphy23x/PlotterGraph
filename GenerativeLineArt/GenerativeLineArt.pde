@@ -47,8 +47,11 @@ final String[] FORMAT_EXT   = { "svg", "gcode", "hpgl" };
 final String[] IMAGE_STYLES = { "TSP line", "Stipple", "Hatch", "Spiral", "Squiggle" };
 final String[] PAPER_NAMES = { "A5", "A4", "A3", "Square" };
 final float[][] PAPER_MM   = { {148, 210}, {210, 297}, {297, 420}, {250, 250} };
-final String[] PEN_NAMES   = { "Black", "Red", "Blue", "Green", "Orange", "Purple", "Teal", "Brown" };
-final int[] PEN_COLORS     = { 0xFF111111, 0xFFD62828, 0xFF1D4ED8, 0xFF15803D, 0xFFEA7A00, 0xFF7E22CE, 0xFF0E9AA7, 0xFF7C4A21 };
+final String[] PEN_NAMES   = { "Black", "Red", "Blue", "Green", "Orange", "Purple", "Teal", "Brown", "White", "Gold", "Silver" };
+final int[] PEN_COLORS     = { 0xFF111111, 0xFFD62828, 0xFF1D4ED8, 0xFF15803D, 0xFFEA7A00, 0xFF7E22CE, 0xFF0E9AA7, 0xFF7C4A21, 0xFFFAFAFA, 0xFFD4A537, 0xFFB4B8BF };
+// paper colours for the preview, image and simulation (plot files stay transparent)
+final String[] PAPER_COLOUR_NAMES = { "White", "Cream", "Kraft", "Grey", "Black", "Navy" };
+final int[] PAPER_COLOURS = { 0xFFFFFFFF, 0xFFF5EEDC, 0xFFC9A57B, 0xFF8E9196, 0xFF1B1B1D, 0xFF1E2A47 };
 final int NUM_LAYERS = 4;
 final String[] LSYS_NAMES  = { "Snowflake", "Dragon", "Gosper", "Sierpinski", "Plant" };
 final String[] FIELD_NAMES = { "Noise", "Photo", "Grid" };       // what drives the field-based patterns
@@ -65,7 +68,7 @@ final int C_HI     = 0xFFA5F3E4;
 // ---------- state ---------------------------------------------------------
 Random ui = new Random();          // UI randomness (pattern generation uses randomSeed)
 
-Param pPaper, pLandscape, pMargin, pOptimize, pSeparate;
+Param pPaper, pPaperCol, pLandscape, pMargin, pOptimize, pSeparate;
 Param pSpeedDown, pSpeedUp, pLiftTime;                 // plotter (time estimate, G-code, HPGL)
 Param pSimplify, pMerge, pMinLen, pDedupe;             // path clean-up
 Param pMarks, pPenTest;                                // extras
@@ -129,6 +132,8 @@ void setup() {
   uiFont = createFont("SansSerif", 13);
   textFont(uiFont);
   pPaper     = new Param(null, "Paper", PAPER_NAMES, 1);
+  pPaperCol  = new Param(null, "Paper colour", PAPER_COLOUR_NAMES, 0);
+  pPaperCol.geometry = false;
   pLandscape = new Param(null, "Landscape", false);
   pMargin    = new Param(null, "Margin (mm)", 0, 60, 15, false);
   pOptimize  = new Param(null, "Optimize travel", true);
@@ -172,7 +177,7 @@ void setup() {
   pAutoExport = new Param(null, "Auto-export", true);
   for (Param p : new Param[] { pRadius, pStreets, pZoom, pWatch, pAutoExport }) p.geometry = false;
 
-  Collections.addAll(globals, pPaper, pLandscape, pMargin, pOptimize, pSeparate, pSpeedDown, pSpeedUp, pLiftTime,
+  Collections.addAll(globals, pPaper, pPaperCol, pLandscape, pMargin, pOptimize, pSeparate, pSpeedDown, pSpeedUp, pLiftTime,
     pSimplify, pMerge, pMinLen, pDedupe, pMarks, pPenTest, pMaskSrc, pMaskSize, pMaskThr, pMaskInv,
     pFormat, pLift, pFlipY, pZUp, pZDown, pServoUp, pServoDown, pBatch,
     pRadius, pStreets, pZoom, pWatch, pAutoExport);
@@ -997,13 +1002,14 @@ class ChoiceW extends Widget {
 
 class SwatchW extends Widget {
   SwatchW(Param p) { this.p = p; h = 22; }
-  float sz() { return min(20, (w - 7 * 4) / 8.0); }
+  float sz() { return min(20, (w - (PEN_COLORS.length - 1) * 4) / (float) PEN_COLORS.length); }
   void display() {
     float sz = sz();
     for (int i = 0; i < PEN_COLORS.length; i++) {
       float bx = x + i * (sz + 4);
       noStroke(); fill(PEN_COLORS[i]); rect(bx, y + 1, sz, sz, 4);
       if (i == p.i()) { noFill(); stroke(C_HI); strokeWeight(2); rect(bx - 2, y - 1, sz + 4, sz + 4, 5); }
+      else if (lowContrast(PEN_COLORS[i], paperColor())) { stroke(C_DIM); strokeWeight(1); line(bx + 3, y + sz - 2, bx + sz - 3, y + 4); }
     }
   }
   void press() {
@@ -1224,6 +1230,7 @@ void addParamWidgets(ArrayList<Widget> top, ArrayList<Param> ps) {
 void buildDesignTab(ArrayList<Widget> top) {
   Layer L = layers[curLayer];
   top.add(new ChoiceW(pPaper, 4, pLandscape));
+  top.add(new ChoiceW(pPaperCol, 6, null));
   top.add(new SliderW(pMargin));
   top.add(new Header("PEN LAYERS  (each layer = one pen)"));
   top.add(new LayerTabsW());
@@ -1437,13 +1444,14 @@ void drawPaper() {
   noFill(); stroke(80, 160, 255, 110); strokeWeight(1);
   rect(ox + xmin * k, oy + ymin * k, (xmax - xmin) * k, (ymax - ymin) * k);
   drawZoomInfo(k);
+  drawContrastWarning();
 }
 
 void renderPreview(int pw, int ph) {
   if (pg == null || pg.width != pw || pg.height != ph) pg = createGraphics(pw, ph, JAVA2D);
   float k = pw / genW;
   pg.beginDraw();
-  pg.background(255);
+  pg.background(paperColor());
   pg.noFill();
   pg.strokeJoin(ROUND);
   pg.strokeCap(ROUND);
@@ -3844,6 +3852,7 @@ boolean applyPreset(JSONObject root) {
       JSONObject st = root.getJSONObject("settings");
       for (Param p : globals) if (st.hasKey(p.label)) p.set(st.getFloat(p.label));
     }
+    if (!root.hasKey("settings") || !root.getJSONObject("settings").hasKey(pPaperCol.label)) pPaperCol.set(0);   // older presets: white paper
     tvMask.set(root.getString("maskText", tvMask.s));
     String mf = root.getString("maskFont", DEFAULT_MASK_FONT);
     if (!mf.equals(maskFontName)) {

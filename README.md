@@ -50,6 +50,7 @@ Open [`GenerativeLineArt/GenerativeLineArt.pde`](GenerativeLineArt/GenerativeLin
 - **Sliders / dials** in the left panel adjust the current layer's parameters live. Mouse wheel over a slider = fine adjustment; elsewhere in the panel it scrolls. **Double-click** a slider (or click its value) to type an exact value: `Enter` applies, `Esc` cancels, `Tab` moves to the next slider, Up/Down nudge; `*2`, `/2`, `+10` and `--10` change the current value, and a decimal comma works too.
 - **Right-click** a pattern parameter or the seed to lock / unlock it (a padlock appears next to its name).
 - **Preview zoom**: mouse wheel over the page zooms around the cursor (up to 4000 %), drag to pan, double-click or `0` fits the page again (`+` / `-` zoom too). Zoomed in, lines are drawn at their real pen width, with a scale bar, so you can check overlaps and fine detail before plotting.
+- **Paper colour** (Design tab): preview on white, cream, kraft, grey, black or navy paper; pens include white, gold and silver for dark paper. It changes the preview, the PNG image and the simulation, never the plot files. A pen that barely shows on the paper is struck through in the swatches and named above the page.
 - **Layer tabs** (1–4) switch which pen layer you're editing.
 - **Pattern dropdown** picks the pattern for the current layer; Left/Right arrow keys cycle through patterns.
 - **New seed / Randomize / Reset** buttons (or `N`/`Space`, `R`) regenerate the current layer.

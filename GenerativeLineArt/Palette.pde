@@ -54,6 +54,10 @@ ArrayList<Cmd> buildCommands() {
     final int m = i;
     c.add(cmd("Pattern: " + PATTERN_NAMES[i], "arrows", new Runnable() { public void run() { L.pMode.set(m); L.pEnabled.set(1); panelTab = 0; } }));
   }
+  for (int i = 0; i < PAPER_COLOUR_NAMES.length; i++) {
+    final int p = i;
+    c.add(cmd("Paper colour: " + PAPER_COLOUR_NAMES[i], "", new Runnable() { public void run() { pPaperCol.set(p); } }));
+  }
   for (int i = 0; i < NUM_LAYERS; i++) {
     final int n = i;
     c.add(cmd("Layer " + (i + 1) + (layers[i].pEnabled.on() ? "" : " (off)") + ": " + PATTERN_NAMES[layers[i].pMode.i()], str(i + 1),

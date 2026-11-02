@@ -50,7 +50,7 @@ void drawZoomed(float ox, float oy, float k) {
     zoomPg.background(C_CANVAS);
     zoomPg.translate(ox - PANEL_W, oy);
     zoomPg.noStroke(); zoomPg.fill(0, 90); zoomPg.rect(5, 6, genW * k, genH * k);
-    zoomPg.fill(255); zoomPg.rect(0, 0, genW * k, genH * k);
+    zoomPg.fill(paperColor()); zoomPg.rect(0, 0, genW * k, genH * k);
     zoomPg.noFill(); zoomPg.strokeJoin(ROUND); zoomPg.strokeCap(ROUND);
     float vx0 = (PANEL_W - ox) / k, vy0 = -oy / k, vx1 = vx0 + aw / k, vy1 = vy0 + ah / k;   // visible page area (mm)
     for (Layer L : layers) {

@@ -32,7 +32,7 @@ PGraphics shareImage(int longSide) {
     float o = i * longSide / 900.0;
     g.rect(pad - o * 0.5 + o * 0.4, pad - o * 0.5 + o * 0.9, pw + o, ph + o, o);
   }
-  g.fill(255); g.rect(pad, pad, pw, ph);
+  g.fill(paperColor()); g.rect(pad, pad, pw, ph);
   g.pushMatrix();
   g.translate(pad, pad);
   g.noFill(); g.strokeJoin(ROUND); g.strokeCap(ROUND);

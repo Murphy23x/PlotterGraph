@@ -87,7 +87,7 @@ PGraphics renderThumb(Layer cur, ArrayList<ArrayList<PVector>> paths) {
   int tw = max(1, round(genW * k)), th = max(1, round(genH * k));
   PGraphics g = createGraphics(tw, th, JAVA2D);
   g.beginDraw();
-  g.background(255);
+  g.background(paperColor());
   g.noFill(); g.strokeJoin(ROUND); g.strokeCap(ROUND);
   for (Layer L : layers) {
     if (!L.pEnabled.on()) continue;

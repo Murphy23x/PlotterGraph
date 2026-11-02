@@ -63,14 +63,14 @@ void drawSimulation() {
   simOy = (areaH() - 40 - ph) / 2.0 + 4;
   if (simPg == null || simPg.width != pw || simPg.height != ph) {
     simPg = createGraphics(pw, ph, JAVA2D);
-    simPg.beginDraw(); simPg.background(255); simPg.endDraw();
+    simPg.beginDraw(); simPg.background(paperColor()); simPg.endDraw();
     simDrawn = 0;
   }
   // paths finished since the last frame go into the buffer
   int done = simDrawn;
   while (done < simEvents.size() && simEvents.get(done)[4] <= simT) done++;
   if (done < simDrawn) {                                       // jumped back: start over
-    simPg.beginDraw(); simPg.background(255); simPg.endDraw();
+    simPg.beginDraw(); simPg.background(paperColor()); simPg.endDraw();
     simDrawn = 0;
   }
   if (done > simDrawn) {
