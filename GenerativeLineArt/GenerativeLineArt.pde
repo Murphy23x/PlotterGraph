@@ -218,6 +218,7 @@ void draw() {
   else drawPaper();
   drawPanel();
   drawStatusBar();
+  drawPalette();
   drawDropOverlay();
   trackUndo();
   autosaveSession();
@@ -735,6 +736,7 @@ void action(int id) {
 }
 
 void keyPressed() {
+  if (paletteOn) { paletteKey(); return; }
   if (fontOpen) { typeFontFilter(); return; }
   if (focusText != null) { typeText(focusText); return; }
   if (exploreKey()) return;
@@ -746,6 +748,7 @@ void keyPressed() {
     if (keyCode == 'Z') { if (shift) redo(); else undo(); }
     else if (keyCode == 'Y') redo();
     else if (keyCode == 'N') startFresh();
+    else if (keyCode == 'K') openPalette();
     return;
   }
   if (key == CODED) {
@@ -759,6 +762,7 @@ void keyPressed() {
   else if (key == 'n' || key == 'N' || key == ' ') newSeed(L);
   else if (key == 'r' || key == 'R') randomizeLayer(L);
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
+  else if (key == '/' || key == '?') openPalette();
   else if (key == 'e' || key == 'E') toggleExplore();
   else if (key == 'g' || key == 'G') toggleSimulation();
   else if (key == '0') resetView();
@@ -1342,7 +1346,7 @@ void drawPanel() {
   for (Widget w : panelFlat) if (!w.scrolls) w.display();
 
   fill(C_DIM); textSize(11); textAlign(LEFT, BOTTOM); textLeading(14);
-  text("S export | P save preset | L load | N seed | R randomize | E variations\nG simulate | Ctrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
+  text("Ctrl+K or /  =  search every command and shortcut\nS export | N seed | R randomize | E variations | G simulate", PAD, clipBottom + 36);
 
   for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).overlay();
   for (Widget w : panelFlat) if (w instanceof FontW) ((FontW) w).overlay();
@@ -1355,6 +1359,7 @@ String fmtParam(Param p) {
 }
 
 void mousePressed() {
+  if (paletteOn) { palettePress(); return; }
   if (focusText == tvNum) applyNum();       // clicking elsewhere keeps the typed value
   focusText = null;
   if (fontOpen) {
@@ -1396,6 +1401,7 @@ void mouseDragged() {
 void mouseReleased() { activeW = null; activeParam = null; panning = false; }
 
 void mouseWheel(MouseEvent event) {
+  if (paletteOn) { paletteWheel(event.getCount()); return; }
   if (fontOpen) { fontScroll += event.getCount() * 3; return; }
   if (ddOpen) return;
   for (Widget w : panelFlat) {
