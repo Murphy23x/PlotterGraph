@@ -208,11 +208,12 @@ void draw() {
 
   updatePage();
   if (pendingBatch) { pendingBatch = false; batchExport(); }
+  if (exploreOn && layers[exploreLayer].dirty) newExploreBatch();   // the layer changed: start over
   regenerate();
   if (pendingAutoExport != null) { File f = pendingAutoExport; pendingAutoExport = null; writeExport(f); }
   if (cliStep()) return;
   buildPanel();
-  drawPaper();
+  if (exploreOn) { exploreStep(); drawExplore(); } else drawPaper();
   drawPanel();
   drawStatusBar();
   drawDropOverlay();
@@ -726,12 +727,14 @@ void action(int id) {
     case 25: designFromText(L, tvSeedText.s); break;
     case 26: aiGenerate(tvPrompt.s); break;
     case 27: clearSources(); break;
+    case 28: toggleExplore(); break;
   }
 }
 
 void keyPressed() {
   if (fontOpen) { typeFontFilter(); return; }
   if (focusText != null) { typeText(focusText); return; }
+  if (exploreKey()) return;
   Layer L = layers[curLayer];
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
   if (ctrl) {
@@ -752,6 +755,7 @@ void keyPressed() {
   else if (key == 'n' || key == 'N' || key == ' ') newSeed(L);
   else if (key == 'r' || key == 'R') randomizeLayer(L);
   else if (key >= '1' && key <= '0' + NUM_LAYERS) curLayer = key - '1';
+  else if (key == 'e' || key == 'E') toggleExplore();
   else if (key == '0') resetView();
   else if (key == '+' || key == '=') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1.5);
   else if (key == '-') zoomAt(PANEL_W + areaW() / 2, areaH() / 2, 1 / 1.5);
@@ -1215,6 +1219,7 @@ void buildDesignTab(ArrayList<Widget> top) {
   top.add(new DropdownW(L.pMode));
   top.add(row(new SliderW(L.pPen), new SliderW(L.pSeed)));
   top.add(new ButtonRow(new String[] { "New seed", "Randomize", "Reset", "Undo", "Redo" }, new int[] { 0, 1, 2, 6, 7 }));
+  top.add(new ButtonRow(new String[] { exploreOn ? "Close variations (E)" : "Explore variations (E)" }, new int[] { 28 }));
   top.add(new Header("PATTERN PARAMETERS  (double-click = type, right-click = lock)"));
   int mode = L.pMode.i();
   if (mode == 26) {
@@ -1331,7 +1336,7 @@ void drawPanel() {
   for (Widget w : panelFlat) if (!w.scrolls) w.display();
 
   fill(C_DIM); textSize(11); textAlign(LEFT, BOTTOM); textLeading(14);
-  text("S export | P save preset | L load | N seed | R randomize\nCtrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
+  text("S export | P save preset | L load | N seed | R randomize | E variations\nCtrl+Z undo | Ctrl+Y redo | 1-4 layer | arrows = pattern", PAD, clipBottom + 36);
 
   for (Widget w : panelFlat) if (w instanceof DropdownW) ((DropdownW) w).overlay();
   for (Widget w : panelFlat) if (w instanceof FontW) ((FontW) w).overlay();
@@ -1357,6 +1362,7 @@ void mousePressed() {
     ddOpen = false;
     return;
   }
+  if (explorePress()) return;
   if (mouseX > PANEL_W) {
     if (inPreview() && mouseEvent != null && mouseEvent.getCount() == 2) resetView();
     else if (inPreview()) { panning = true; panLastX = mouseX; panLastY = mouseY; }
@@ -1393,6 +1399,7 @@ void mouseWheel(MouseEvent event) {
       return;
     }
   }
+  if (exploreOn && inPreview()) return;
   if (inPreview()) { zoomAt(mouseX, mouseY, pow(1.25, -event.getCount())); return; }
   if (mouseX < PANEL_W) panelScroll = constrain(panelScroll + event.getCount() * 40, 0, maxScroll);
 }
