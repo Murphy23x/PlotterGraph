@@ -55,7 +55,9 @@ void runMainQueue() {
 // Runs 'work' off the animation thread; errors end up in the status bar.
 void runAsync(final String what, final Task work) {
   if (syncJobs) {
-    try { work.run(); } catch (Exception e) { cliError(what + " failed: " + errText(e)); }
+    try { work.run(); }
+    catch (CliAbort e) { throw e; }                     // already reported
+    catch (Exception e) { cliError(what + " failed: " + errText(e)); }
     return;
   }
   busyCount++;
