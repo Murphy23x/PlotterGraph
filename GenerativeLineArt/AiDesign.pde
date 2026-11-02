@@ -27,9 +27,9 @@ String aiInfo() {
 
 void aiGenerate(String prompt0) {
   final String prompt = prompt0.trim();
-  if (prompt.isEmpty()) { setStatus("Describe the design first"); return; }
+  if (prompt.isEmpty()) { cliError("Describe the design first"); return; }
   final String key = aiKey();
-  if (key == null) { setStatus("Set ANTHROPIC_API_KEY to use AI design (see README)"); return; }
+  if (key == null) { cliError("Set ANTHROPIC_API_KEY to use AI design (see README)"); return; }
   final String body = aiRequest(prompt).format(-1);
   runAsync("Designing with Claude", new Task() {
     public void run() throws Exception {
@@ -169,6 +169,8 @@ void applyAiDesign(JSONObject d) {
   root.setBoolean("filePerLayer", pSeparate.on());
   root.setString("maskFont", maskFontName);
   JSONArray in = d.getJSONArray("layers"), outL = new JSONArray();
+  if (in == null || in.size() == 0) { cliError("AI design: the answer has no layers"); return; }
+  ArrayList<String> skipped = new ArrayList<String>();
   for (int i = 0; i < min(NUM_LAYERS, in.size()); i++) {
     JSONObject a = in.getJSONObject(i), o = new JSONObject();
     String pat = a.getString("pattern", PATTERN_NAMES[0]);
@@ -183,7 +185,13 @@ void applyAiDesign(JSONObject d) {
     o.setString("field", layers[i].pMode.i() == indexOf(PATTERN_NAMES, pat) ? FIELD_NAMES[layers[i].pField.i()] : "Noise");
     JSONObject named = new JSONObject();
     JSONArray ps = a.getJSONArray("params");
-    for (int k = 0; k < ps.size(); k++) named.setFloat(ps.getJSONObject(k).getString("name", ""), ps.getJSONObject(k).getFloat("value", 0));
+    int mi = indexOf(PATTERN_NAMES, pat);
+    for (int k = 0; k < ps.size(); k++) {
+      String nm = ps.getJSONObject(k).getString("name", "");
+      Param fp = mi >= 0 ? findParam(layers[i].modeParams.get(mi), nm) : null;
+      if (fp == null) { skipped.add(pat + "/" + nm); continue; }
+      named.setFloat(fp.label, ps.getJSONObject(k).getFloat("value", 0));
+    }
     JSONObject pp = new JSONObject();
     pp.setJSONObject(pat, named);
     o.setJSONObject("params", pp);
@@ -197,6 +205,21 @@ void applyAiDesign(JSONObject d) {
   }
   if (!applyPreset(root)) return;
   aiSummary = d.getString("summary", "");
-  setStatus("AI design: " + (aiSummary.isEmpty() ? "applied" : aiSummary));
-  if (syncJobs) println("AI design: " + aiSummary);
+  String note = skipped.isEmpty() ? "" : " (ignored unknown " + join(skipped.toArray(new String[0]), ", ") + ")";
+  setStatus("AI design: " + (aiSummary.isEmpty() ? "applied" : aiSummary) + note);
+  if (syncJobs) println("AI design: " + aiSummary + note);
+}
+
+// A parameter by its label, ignoring case, spaces and a unit in brackets
+// (the model may write "step" for "Step (mm)" or "noise_scale" for "Noise scale").
+Param findParam(ArrayList<Param> ps, String name) {
+  String n = paramKey(name, false);
+  for (Param p : ps) if (paramKey(p.label, false).equals(n)) return p;
+  for (Param p : ps) if (paramKey(p.label, true).equals(paramKey(name, true))) return p;
+  return null;
+}
+
+String paramKey(String s, boolean dropUnit) {
+  if (dropUnit) s = s.replaceAll("\\(.*?\\)", "");
+  return s.replaceAll("[\\s_-]+", "").toLowerCase();
 }

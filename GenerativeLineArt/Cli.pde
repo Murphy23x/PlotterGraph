@@ -55,26 +55,31 @@ void cliArgs() {
   for (int i = 0; i < args.length; i++) {
     String a = args[i];
     String next = i + 1 < args.length && !args[i + 1].startsWith("--") ? args[i + 1] : null;
-    if (next != null && !a.equals("--landscape") && !a.equals("--portrait") && !a.equals("--weather") && !a.equals("--help")) i++;
+    // flags take no value; --streets and --terrain take one only when it fits
+    boolean flag = a.equals("--landscape") || a.equals("--portrait") || a.equals("--weather") || a.equals("--help") || a.equals("-h");
+    if (a.equals("--streets") && next != null && indexOf(STREET_OPTS, next.toLowerCase()) < 0) next = null;
+    if (a.equals("--terrain") && next != null && !next.matches("\\d+")) next = null;
+    if (flag) next = null;
+    if (next != null) i++;
     if (a.equals("--help") || a.equals("-h")) { println(CLI_HELP); cliQuit(0); return; }
     else if (a.equals("--preset")) { File f = cliFile(need(a, next)); if (!applyPreset(loadJSONObject(f.getAbsolutePath()))) cliError("bad preset " + f); }
     else if (a.equals("--input")) { File f = cliFetch(need(a, next)); if (!loadAny(f, true)) cliError("could not load " + next + ": " + status); }
     else if (a.equals("--grid")) { File f = cliFetch(need(a, next)); if (!loadGridFile(f)) cliError(status); pickGrid(); }
-    else if (a.equals("--layer")) curLayer = constrain(parseInt(need(a, next)) - 1, 0, NUM_LAYERS - 1);
+    else if (a.equals("--layer")) curLayer = needInt(a, next, 1, NUM_LAYERS) - 1;
     else if (a.equals("--location")) tvLocation.set(need(a, next));
-    else if (a.equals("--radius")) pRadius.set(parseInt(need(a, next)));
+    else if (a.equals("--radius")) pRadius.set(needInt(a, next, 200, 5000));
     else if (a.equals("--streets")) {
-      if (next != null) { int t = indexOf(new String[] { "all", "major", "water", "buildings" }, next.toLowerCase()); if (t < 0) cliError("unknown street type " + next); pStreets.set(t); }
+      if (next != null) pStreets.set(indexOf(STREET_OPTS, next.toLowerCase()));
       fetchStreets();
     }
-    else if (a.equals("--terrain")) { if (next != null) pZoom.set(parseInt(next)); fetchTerrain(); }
+    else if (a.equals("--terrain")) { if (next != null) pZoom.set(needInt(a, next, 6, 14)); fetchTerrain(); }
     else if (a.equals("--weather")) fetchWeather();
     else if (a.equals("--text")) {
       Layer L = layers[curLayer];
       if (L.pMode.i() != 34) { L.pMode.set(34); L.pEnabled.set(1); }
       L.text.set(need(a, next));
     }
-    else if (a.equals("--seed")) layers[curLayer].pSeed.set(parseInt(need(a, next)));
+    else if (a.equals("--seed")) layers[curLayer].pSeed.set(needInt(a, next, 0, 9999));
     else if (a.equals("--seed-text")) seedFromText(layers[curLayer], need(a, next));
     else if (a.equals("--design-text")) designFromText(layers[curLayer], need(a, next));
     else if (a.equals("--prompt")) aiGenerate(need(a, next));
@@ -87,7 +92,7 @@ void cliArgs() {
       int f = indexOf(FORMAT_EXT, extOf(cliOut));
       if (f >= 0) pFormat.set(f);
     }
-    else if (a.equals("--batch")) cliBatch = max(1, parseInt(need(a, next)));
+    else if (a.equals("--batch")) cliBatch = needInt(a, next, 1, 10000);
     else if (a.equals("--watch")) watch = need(a, next);
     else cliError("unknown option " + a + " (try --help)");
   }
@@ -102,6 +107,17 @@ void cliArgs() {
     cliOneShot = true;
     surface.setVisible(false);
   }
+}
+
+final String[] STREET_OPTS = { "all", "major", "water", "buildings" };
+
+// A whole number in [lo, hi]; anything else stops the run instead of quietly becoming 0.
+int needInt(String opt, String v, int lo, int hi) {
+  need(opt, v);
+  long n;
+  try { n = Long.parseLong(v.trim()); } catch (NumberFormatException e) { cliError(opt + " needs a whole number, not \"" + v + "\""); return lo; }
+  if (n < lo || n > hi) cliError(opt + " must be between " + lo + " and " + hi + " (got " + v + ")");
+  return (int) Math.max(lo, Math.min(hi, n));
 }
 
 String need(String opt, String v) {
