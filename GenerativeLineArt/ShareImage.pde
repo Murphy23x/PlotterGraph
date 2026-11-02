@@ -70,7 +70,7 @@ PGraphics shareImage(int longSide) {
   for (int i = NUM_LAYERS - 1; i >= 0; i--) {
     Layer L = layers[i];
     if (!L.pEnabled.on()) continue;
-    g.noStroke(); g.fill(L.penColor()); g.ellipse(x, ty, r * 2, r * 2);
+    g.stroke(0, 50); g.strokeWeight(max(1, r * 0.08)); g.fill(L.penColor()); g.ellipse(x, ty, r * 2, r * 2);
     x -= r * 2.8;
   }
   g.endDraw();

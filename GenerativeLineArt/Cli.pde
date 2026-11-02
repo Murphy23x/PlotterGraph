@@ -24,6 +24,9 @@ final String CLI_HELP = String.join("\n",
   "  --location <place|lat,lon>   for --streets, --terrain and --weather",
   "  --streets [all|major|water|buildings]   --radius <m>   --terrain [zoom]   --weather",
   "  --text <text>            text for the Text pattern ( | = new line)",
+  "  --set \"<name>=<value>\"   any parameter by name: the layer's pattern, layer settings (Pattern, Pen colour,",
+  "                           Pen width, Scale, ...) or page settings (Paper colour, Margin (mm), ...)",
+  "  --list [json]            list every pattern, parameter and setting with its range, then quit",
   "  --seed <n>               seed of the layer;  --seed-text <s>  seed from text;  --design-text <s>  design from text",
   "  --prompt <description>   AI design (needs ANTHROPIC_API_KEY)",
   "  --paper A5|A4|A3|Square  --landscape  --portrait",
@@ -57,6 +60,7 @@ void cliArgs() {
     String next = i + 1 < args.length && !args[i + 1].startsWith("--") ? args[i + 1] : null;
     // flags take no value; --streets and --terrain take one only when it fits
     boolean flag = a.equals("--landscape") || a.equals("--portrait") || a.equals("--weather") || a.equals("--help") || a.equals("-h");
+    if (a.equals("--list") && next != null && !next.equalsIgnoreCase("json")) next = null;
     if (a.equals("--streets") && next != null && indexOf(STREET_OPTS, next.toLowerCase()) < 0) next = null;
     if (a.equals("--terrain") && next != null && !next.matches("\\d+")) next = null;
     if (flag) next = null;
@@ -79,6 +83,8 @@ void cliArgs() {
       if (L.pMode.i() != 34) { L.pMode.set(34); L.pEnabled.set(1); }
       L.text.set(need(a, next));
     }
+    else if (a.equals("--list")) { cliList(next != null); cliQuit(0); return; }
+    else if (a.equals("--set")) cliSet(need(a, next));
     else if (a.equals("--seed")) layers[curLayer].pSeed.set(needInt(a, next, 0, 9999));
     else if (a.equals("--seed-text")) seedFromText(layers[curLayer], need(a, next));
     else if (a.equals("--design-text")) designFromText(layers[curLayer], need(a, next));
@@ -169,4 +175,104 @@ boolean cliStep() {
   println(status);
   exit();
   return true;
+}
+
+// --list: every pattern with its parameters, the layer settings and the page
+// settings, as text or (--list json) as JSON for scripts.
+void cliList(boolean json) {
+  if (json) {
+    JSONObject root = new JSONObject();
+    JSONArray pats = new JSONArray();
+    for (int m = 0; m < PATTERN_NAMES.length; m++) {
+      JSONObject o = new JSONObject();
+      o.setString("name", PATTERN_NAMES[m]);
+      o.setJSONArray("params", paramsJSON(makeParams(null, m)));
+      pats.append(o);
+    }
+    root.setJSONArray("patterns", pats);
+    Layer L = layers[0];
+    root.setJSONArray("layer", paramsJSON(layerParams(L)));
+    root.setJSONArray("page", paramsJSON(globals));
+    println(root.format(2));
+    return;
+  }
+  StringBuilder sb = new StringBuilder("Patterns and their parameters (name [range] default):\n");
+  for (int m = 0; m < PATTERN_NAMES.length; m++) sb.append("  ").append(PATTERN_NAMES[m]).append(": ").append(paramsText(makeParams(null, m))).append('\n');
+  sb.append("\nLayer settings: ").append(paramsText(layerParams(layers[0]))).append('\n');
+  sb.append("\nPage settings: ").append(paramsText(globals)).append('\n');
+  sb.append("\nChange any of them with --set \"<name>=<value>\" (choices by name, e.g. --set \"Paper colour=Black\").");
+  println(sb.toString());
+}
+
+ArrayList<Param> layerParams(Layer L) {
+  ArrayList<Param> a = new ArrayList<Param>();
+  Collections.addAll(a, L.pEnabled, L.pMode, L.pColor, L.pPen, L.pSeed, L.pScale, L.pRot, L.pOffX, L.pOffY, L.pMask, L.pField);
+  return a;
+}
+
+String paramsText(ArrayList<Param> ps) {
+  StringBuilder sb = new StringBuilder();
+  for (int k = 0; k < ps.size(); k++) {
+    Param p = ps.get(k);
+    if (k > 0) sb.append("; ");
+    sb.append(p.label);
+    if (p.type == 1) sb.append(" [on/off] ").append(p.on() ? "on" : "off");
+    else if (p.type == 2) sb.append(" [").append(join(p.opts, "|")).append("] ").append(p.opts[p.i()]);
+    else sb.append(" [").append(fmtNum(p.min)).append("..").append(fmtNum(p.max)).append("] ").append(fmtNum(p.def));
+  }
+  return sb.toString();
+}
+
+JSONArray paramsJSON(ArrayList<Param> ps) {
+  JSONArray a = new JSONArray();
+  for (Param p : ps) {
+    JSONObject o = new JSONObject();
+    o.setString("name", p.label);
+    o.setString("type", p.type == 1 ? "toggle" : (p.type == 2 ? "choice" : (p.isInt ? "integer" : "number")));
+    if (p.type == 2) { JSONArray opts = new JSONArray(); for (String s : p.opts) opts.append(s); o.setJSONArray("options", opts); o.setString("default", p.opts[(int) p.def]); }
+    else if (p.type == 1) o.setBoolean("default", p.def > 0.5);
+    else { o.setDouble("min", Double.parseDouble(fmtNum(p.min))); o.setDouble("max", Double.parseDouble(fmtNum(p.max))); o.setDouble("default", Double.parseDouble(fmtNum(p.def))); }
+    a.append(o);
+  }
+  return a;
+}
+
+// --set "<name>=<value>": the current layer's pattern parameters first, then
+// its layer settings, then the page settings. Choices take the option name
+// (or its number), toggles on/off/true/false/1/0.
+void cliSet(String spec) {
+  int eq = spec.indexOf('=');
+  if (eq <= 0) cliError("--set needs <name>=<value>, e.g. --set \"Lines=80\"");
+  String name = spec.substring(0, eq).trim(), v = spec.substring(eq + 1).trim();
+  Layer L = layers[curLayer];
+  Param p = findParam(L.params(), name);
+  if (p == null) p = findParam(layerParams(L), name);
+  if (p == null && paramKey(name, true).equals("pen")) p = L.pColor;
+  if (p == null && paramKey(name, true).equals("pattern")) p = L.pMode;
+  if (p == null) p = findParam(globals, name);
+  if (p == null) {
+    ArrayList<String> near = new ArrayList<String>();
+    for (Param q : L.params()) near.add(q.label);
+    cliError("no parameter \"" + name + "\" (" + PATTERN_NAMES[L.pMode.i()] + " has: " + join(near.toArray(new String[0]), ", ") + "; --list shows all)");
+    return;
+  }
+  float val;
+  if (p.type == 2) {
+    int i = -1;
+    for (int k = 0; k < p.opts.length; k++) if (paramKey(p.opts[k], false).equals(paramKey(v, false))) i = k;
+    if (i < 0 && v.matches("\\d+")) i = Integer.parseInt(v);
+    if (i < 0 || i >= p.opts.length) { cliError(p.label + " is one of: " + join(p.opts, ", ")); return; }
+    val = i;
+  } else if (p.type == 1) {
+    String b = v.toLowerCase();
+    if (b.matches("on|true|yes|1")) val = 1;
+    else if (b.matches("off|false|no|0")) val = 0;
+    else { cliError(p.label + " is on or off, not \"" + v + "\""); return; }
+  } else {
+    try { val = Float.parseFloat(v.replace(',', '.')); }
+    catch (NumberFormatException e) { cliError(p.label + " needs a number, not \"" + v + "\""); return; }
+    if (val < p.min || val > p.max) cliError(p.label + " must be between " + fmtNum(p.min) + " and " + fmtNum(p.max) + " (got " + v + ")");
+  }
+  p.set(val);
+  if (p == L.pMode) L.pEnabled.set(1);
 }

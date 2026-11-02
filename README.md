@@ -104,11 +104,12 @@ Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.j
 Processing cli --sketch=GenerativeLineArt --run --input route.gpx --text "Sunday ride" --layer 2 --format gcode --out ride.gcode
 Processing cli --sketch=GenerativeLineArt --run --location "Utrecht" --streets major --radius 2000 --out utrecht.svg
 Processing cli --sketch=GenerativeLineArt --run --preset presets/wave_lines_a3.json --out preview.png   # proof card image
+Processing cli --sketch=GenerativeLineArt --run --set "Pattern=Wave lines" --set "Lines=90" --set "Paper colour=Black" --set "Pen colour=White" --out waves.png
 Processing cli --sketch=GenerativeLineArt --run --design-text "Anna & Tom" --batch 10
 Processing cli --sketch=GenerativeLineArt --run --watch C:\Plots\Inbox
 ```
 
-Options: `--preset`, `--input <file|url>` (repeatable), `--grid`, `--layer`, `--location`, `--streets [all|major|water|buildings]`, `--radius`, `--terrain [zoom]`, `--weather`, `--text`, `--seed`, `--seed-text`, `--design-text`, `--prompt`, `--paper`, `--landscape` / `--portrait`, `--format svg|gcode|hpgl`, `--out`, `--batch <n>`, `--watch <folder>`, `--help`. Relative paths are relative to the current directory. Without `--watch` the window stays hidden and the sketch quits after exporting, with exit code 1 when something failed. On a Linux server without a display, run it under `xvfb-run`.
+Options: `--set "<name>=<value>"` (any parameter or setting by name; choices by option name), `--list [json]` (every pattern, parameter and setting with its range), `--preset`, `--input <file|url>` (repeatable), `--grid`, `--layer`, `--location`, `--streets [all|major|water|buildings]`, `--radius`, `--terrain [zoom]`, `--weather`, `--text`, `--seed`, `--seed-text`, `--design-text`, `--prompt`, `--paper`, `--landscape` / `--portrait`, `--format svg|gcode|hpgl`, `--out`, `--batch <n>`, `--watch <folder>`, `--help`. Relative paths are relative to the current directory. Without `--watch` the window stays hidden and the sketch quits after exporting, with exit code 1 when something failed. On a Linux server without a display, run it under `xvfb-run`.
 
 ## Plotting
 
