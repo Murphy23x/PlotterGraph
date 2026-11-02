@@ -96,7 +96,8 @@ byte[] readAllBytes(InputStream in) throws Exception {
 // GET (body == null) or POST. Follows redirects (also http -> https), but never
 // https -> http, and a request with headers or a body only within the same host.
 byte[] httpRequest(String url, String body, String[] headers) throws Exception {
-  for (int hop = 0; hop < 5; hop++) {
+  int hops = 0, retries = 0;
+  while (hops < 5) {
     HttpURLConnection c = (HttpURLConnection) URI.create(url).toURL().openConnection();
     c.setConnectTimeout(20000);
     c.setReadTimeout(180000);
@@ -119,12 +120,28 @@ byte[] httpRequest(String url, String body, String[] headers) throws Exception {
       if ((headers != null || body != null) && !sameOrigin(cur, next))
         throw new Exception("refused a redirect to another host (" + next.getHost() + ")");
       url = next.toString();
+      hops++;
+      continue;
+    }
+    // busy or briefly unavailable: wait (Retry-After, at most 30 s) and try twice more
+    if ((code == 429 || code == 502 || code == 503 || code == 504 || code == 529) && retries < 2) {
+      long wait = 2000L << retries;
+      try { wait = constrain(Integer.parseInt(c.getHeaderField("Retry-After").trim()), 1, 30) * 1000L; } catch (Exception e) {}
+      c.disconnect();
+      Thread.sleep(wait);
+      retries++;
       continue;
     }
     byte[] b = readAllBytes(code >= 400 ? c.getErrorStream() : c.getInputStream());
     if (code >= 400) {
       String t = new String(b, "UTF-8").trim();
       if (t.startsWith("<")) t = "";                    // an HTML error page says nothing useful here
+      if (t.startsWith("{")) {                          // {"error": {"message": ...}} as most APIs answer
+        try {
+          JSONObject j = parseJSONObject(t), e = j.getJSONObject("error");
+          if (e != null && e.hasKey("message")) t = e.getString("message");
+        } catch (Exception ignored) {}
+      }
       if (t.length() > 300) t = t.substring(0, 300) + "...";
       throw new Exception("HTTP " + code + " from " + URI.create(url).getHost() + (t.isEmpty() ? "" : ": " + t));
     }
