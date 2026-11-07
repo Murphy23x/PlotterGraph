@@ -241,7 +241,7 @@ JSONArray paramsJSON(ArrayList<Param> ps) {
 // its layer settings, then the page settings. Choices take the option name
 // (or its number), toggles on/off/true/false/1/0.
 void cliSet(String spec) {
-  int eq = spec.indexOf('=');
+  int eq = spec.lastIndexOf('=');                     // names may contain '=' ("Spacing (0=off)"), values don't
   if (eq <= 0) cliError("--set needs <name>=<value>, e.g. --set \"Lines=80\"");
   String name = spec.substring(0, eq).trim(), v = spec.substring(eq + 1).trim();
   Layer L = layers[curLayer];
