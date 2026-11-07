@@ -7,6 +7,7 @@ Generative line art with a live-adjustable GUI, built as a single [Processing](h
 ## Features
 
 - **35 patterns** — flow field, wave lines, spirograph, noise rings, Lissajous, contour map, Truchet tiles, hatch shading, strange attractor, superformula, nested polygons, spiral, moire circles, circle packing, harmonograph, Hilbert curve, sunburst, maze, L-system, guilloche, Maurer rose, phyllotaxis, subdivision, warped grid, fractal tree, Voronoi, image, hex Truchet, Penrose, hex maze, route, data lines, SVG import, audio, text.
+  - **Strange attractor** — Clifford and De Jong attractors, each point of the orbit drawn as a pen dot (stipple), so the attractor's shape builds up from thousands of dots.
   - **Maze** — recursive-backtracker maze drawn as walls or as its centre-line path (same seed on two layers = walls + solution-style path in a second pen). Wall segments are merged into long strokes to minimise pen lifts.
   - **L-system** — Koch snowflake, dragon curve, Gosper curve, Sierpinski arrowhead and a branching plant, with angle tweak, jitter and smoothing.
   - **Guilloche** — banknote-style rosettes: interleaved lines oscillating between two lobed envelopes.
