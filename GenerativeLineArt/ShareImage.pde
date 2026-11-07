@@ -59,14 +59,19 @@ PGraphics shareImage(int longSide) {
   float ts = longSide * 0.026, ty = pad + ph + foot * 0.42;
   g.textFont(uiFont);
   g.textAlign(LEFT, CENTER);
-  g.fill(0xFF2A2A2A); g.textSize(ts);
-  g.text(pats.isEmpty() ? "Empty design" : join(pats.toArray(new String[0]), "  +  "), pad, ty);
-  g.fill(0xFF77736C); g.textSize(ts * 0.62);
+  // the caption shrinks to stay clear of the pen swatches on the right
+  float r = ts * 0.55, room = pw - pens * r * 2.8 - r;
+  String title = pats.isEmpty() ? "Empty design" : join(pats.toArray(new String[0]), "  +  ");
   String info = PAPER_NAMES[pPaper.i()] + (pLandscape.on() ? " landscape" : "") + "  ·  " + round(genW) + " × " + round(genH) + " mm  ·  "
     + pens + (pens == 1 ? " pen" : " pens") + "  ·  " + String.format(Locale.US, "%.1f m of line", len / 1000) + "  ·  plot time " + fmtTime(secs).replace("~", "about ");
+  g.fill(0xFF2A2A2A); g.textSize(ts);
+  if (g.textWidth(title) > room) g.textSize(max(ts * 0.4, ts * room / g.textWidth(title)));
+  g.text(title, pad, ty);
+  g.fill(0xFF77736C); g.textSize(ts * 0.62);
+  if (g.textWidth(info) > room) g.textSize(max(ts * 0.3, ts * 0.62 * room / g.textWidth(info)));
   g.text(info, pad, ty + ts * 1.15);
   // pen swatches, right-aligned
-  float r = ts * 0.55, x = pad + pw - r;
+  float x = pad + pw - r;
   for (int i = NUM_LAYERS - 1; i >= 0; i--) {
     Layer L = layers[i];
     if (!L.pEnabled.on()) continue;

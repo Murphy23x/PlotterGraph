@@ -6,10 +6,12 @@
 Param numParam = null;
 TextVal tvNum = new TextVal("", 24);
 float sliderPressVal = 0;                // value before the press (a double-click restores it)
+boolean numFresh = false;                // the field still shows the old value: typing replaces it
 
 void startNumEdit(Param p) {
   numParam = p;
   tvNum.s = fmtParam(p);
+  numFresh = true;
   focusText = tvNum;
 }
 
@@ -55,9 +57,17 @@ boolean numKey() {
     if (keyEvent != null && keyEvent.isShiftDown()) step *= 10;
     p.set(p.val + (keyCode == UP ? step : -step));
     tvNum.s = fmtParam(p);
+    numFresh = true;
     return true;
   }
   if (key >= 32 && key != DELETE && "0123456789.,-+*/x eE".indexOf(key) < 0) return true;   // ignore letters
+  // the first key replaces the old value (so "1500", "*2" or "+10" work as typed)
+  boolean paste = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown()) && keyCode == 'V';
+  if (numFresh && (paste || key == BACKSPACE || (key >= 32 && key != DELETE && key != CODED))) {
+    tvNum.s = "";
+    numFresh = false;
+    return key == BACKSPACE;
+  }
   return false;
 }
 
@@ -78,6 +88,7 @@ void drawNumField(SliderW w) {
   float fw = max(56, textWidth(t) + 16);
   stroke(C_ACCENT); strokeWeight(1); fill(C_FIELD);
   rect(w.x + w.w - fw, w.y - 3, fw, 19, 3);
+  if (numFresh) { noStroke(); fill(C_ACCENT, 90); rect(w.x + w.w - 7 - textWidth(t) - 2, w.y - 1, textWidth(t) + 4, 15, 2); }   // selected
   noStroke(); fill(C_TEXT); textAlign(RIGHT, TOP);
   text(t, w.x + w.w - 7, w.y);
   if ((millis() / 500) % 2 == 0) { stroke(C_ACCENT); line(w.x + w.w - 5, w.y - 1, w.x + w.w - 5, w.y + 14); }

@@ -203,12 +203,10 @@ void setup() {
 
 void draw() {
   background(C_CANVAS);
-  if (pendingExport != null)     { File f = pendingExport;     pendingExport = null;     writeExport(f); }
   if (pendingPresetSave != null) { File f = pendingPresetSave; pendingPresetSave = null; savePreset(f); }
   if (pendingPresetLoad != null) { File f = pendingPresetLoad; pendingPresetLoad = null; loadPreset(f); }
   if (pendingPhoto != null)      { File f = pendingPhoto;      pendingPhoto = null;      loadPhoto(f); }
   if (pendingMask != null)       { File f = pendingMask;       pendingMask = null;       loadMaskImage(f); }
-  if (pendingShare != null)      { File f = pendingShare;      pendingShare = null;      writeShareImage(f); }
   runMainQueue();
   pollWatchFolder();
 
@@ -216,6 +214,10 @@ void draw() {
   if (pendingBatch) { pendingBatch = false; batchExport(); }
   if (exploreOn && layers[exploreLayer].dirty) newExploreBatch();   // the layer changed: start over
   regenerate();
+  // exports run after the page and the layers are up to date, so a change made
+  // just before pressing S (or a preset loaded in the same frame) is included
+  if (pendingExport != null)     { File f = pendingExport;     pendingExport = null;     writeExport(f); }
+  if (pendingShare != null)      { File f = pendingShare;      pendingShare = null;      writeShareImage(f); }
   if (pendingAutoExport != null) { File f = pendingAutoExport; pendingAutoExport = null; writeExport(f); }
   if (cliStep()) return;
   buildPanel();
@@ -402,7 +404,7 @@ ArrayList<Param> makeParams(Layer L, int mode) {
       l.add(P(L, "b",               -3,   3,  1.6, false));
       l.add(P(L, "c",               -3,   3,  1.0, false));
       l.add(P(L, "d",               -3,   3,  0.7, false));
-      l.add(P(L, "Iterations",      200, 100000, 2500, true));
+      l.add(P(L, "Iterations",      200, 100000, 6000, true));
       l.add(P(L, "Strands",           1,  40,   1, true));
       break;
     case 9: // Superformula
@@ -748,6 +750,12 @@ void keyPressed() {
   if (focusText != null) { typeText(focusText); return; }
   if (exploreKey()) return;
   if (simKey()) return;
+  if (key == ESC) {                                  // Esc closes the dropdown or the zoom, never the app
+    key = 0;
+    if (ddOpen) ddOpen = false;
+    else if (viewZoom > 1) resetView();
+    return;
+  }
   Layer L = layers[curLayer];
   boolean ctrl = keyEvent != null && (keyEvent.isControlDown() || keyEvent.isMetaDown());
   if (ctrl) {
@@ -2359,18 +2367,25 @@ void genAttractor(ArrayList<ArrayList<PVector>> out) {
   float sc = min(w / sw, h / sh) * 0.98;
   float cx = (xmin + xmax) / 2 - (x0 + x1) / 2 * sc, cy = (ymin + ymax) / 2 - (y0 + y1) / 2 * sc;
 
-  int per = max(2, iters / strands);
+  // Successive iterates of these maps jump all over the attractor, so joining
+  // them with lines only gives a tangle. Each iterate is drawn as a tiny dash
+  // (a pen dot) instead; the dots build up the attractor's shape. 'Strands' =
+  // number of orbits started from different random points.
+  int per = max(1, iters / strands);
+  float dl = 0.35;                                 // dash length (mm): a dot at plotter pen widths
   for (int sIdx = 0; sIdx < strands; sIdx++) {
     x = random(-1, 1); y = random(-1, 1);
-    ArrayList<PVector> pts = new ArrayList<PVector>(per);
     for (int i = 0; i < per + 50; i++) {
       float nx, ny;
       if (type == 0) { nx = sin(a * y) + c * cos(a * x); ny = sin(b * x) + d * cos(b * y); }
       else           { nx = sin(a * y) - cos(b * x);     ny = sin(c * x) - cos(d * y); }
       x = nx; y = ny;
-      if (i >= 50) pts.add(new PVector(cx + x * sc, cy + y * sc));
+      if (i < 50) continue;                        // let the orbit settle onto the attractor
+      float px = cx + x * sc, py = cy + y * sc;
+      ArrayList<PVector> dot = new ArrayList<PVector>(2);
+      dot.add(new PVector(px - dl / 2, py)); dot.add(new PVector(px + dl / 2, py));
+      emit(out, dot);
     }
-    emit(out, pts);
   }
 }
 

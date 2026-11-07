@@ -1,5 +1,6 @@
-# Exported plots
-GenerativeLineArt/exports/*.svg
+# Exported plots (SVG, G-code, HPGL, batch folders)
+GenerativeLineArt/exports/*
+!GenerativeLineArt/exports/.gitkeep
 
 # Downloads (web addresses, streets, terrain, weather) cached by the sketch
 GenerativeLineArt/cache/
